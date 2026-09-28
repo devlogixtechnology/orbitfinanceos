@@ -1,0 +1,22 @@
+{
+  "name": "@orbitos/canonical-model",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src test --max-warnings=0",
+    "schema:check": "vitest run test/schema.test.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  }
+}

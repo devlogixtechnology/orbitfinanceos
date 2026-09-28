@@ -1,0 +1,24 @@
+packages:
+  - apps/*
+  - packages/*
+
+allowBuilds:
+  esbuild: true
+
+catalog:
+  '@types/node': 24.19.0
+  fastify: 5.12.5
+  kysely: 0.29.6
+  pg: 8.23.0
+  typescript: 6.0.3
+  vitest: 5.0.2
+  zod: 4.6.5
+
+minimumReleaseAgeExclude:
+  - '@turbo/darwin-64@2.11.5'
+  - '@turbo/darwin-arm64@2.11.5'
+  - '@turbo/linux-64@2.11.5'
+  - '@turbo/linux-arm64@2.11.5'
+  - '@turbo/windows-64@2.11.5'
+  - '@turbo/windows-arm64@2.11.5'
+  - turbo@2.11.5

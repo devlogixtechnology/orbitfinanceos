@@ -1,0 +1,23 @@
+node_modules/
+.pnpm-store/
+.turbo/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+*.tsbuildinfo
+
+# Local-only business sources and agent context. Never commit or push these.
+.agents/
+*.pdf
+/AGENTS.md
+/Agent.md
+/AI_CONTEXT.md
+/CLAUDE.md
+/GEMINI.md
+/MEMORY.md
+/instructions.md
+/.github/copilot-instructions.md
+/docs/SOURCE_ANALYSIS.md

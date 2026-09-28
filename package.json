@@ -1,0 +1,31 @@
+{
+  "name": "orbitos",
+  "version": "0.0.0",
+  "private": true,
+  "description": "OrbitOS digital-asset financial operating system",
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=24.21.0 <25",
+    "pnpm": ">=11.19.0 <12"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "guard:public": "node scripts/check-public-boundary.mjs --tracked",
+    "lint": "turbo run lint",
+    "schema:check": "turbo run schema:check",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.0",
+    "eslint": "10.11.0",
+    "turbo": "2.11.5",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.1",
+    "vitest": "5.0.2"
+  }
+}
