@@ -1,0 +1,101 @@
+name: PR policy
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+      - ready_for_review
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: pr-policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  branch-policy:
+    name: Readiness comment
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate pull request policy and publish readiness
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        with:
+          script: |
+            const pullRequest = context.payload.pull_request;
+            const errors = [];
+            const branchPattern = /^(?:(?:feat|fix|docs|refactor|test|chore|ci|hotfix|revert)\/[a-z0-9]+(?:-[a-z0-9]+)*|release\/v\d+\.\d+\.\d+)$/;
+            const titlePattern = /^(feat|fix|docs|refactor|test|chore|ci|revert)(\([a-z0-9-]+\))?!?: .+/;
+            const requiredSections = [
+              "## Summary",
+              "## Validation",
+              "## Risk and rollback",
+              "## Release notes",
+            ];
+
+            if (pullRequest.base.ref === "main" && pullRequest.head.ref !== "staging") {
+              errors.push("Only the `staging` branch may open a pull request to `main`.");
+            }
+
+            if (pullRequest.base.ref === "staging" && !branchPattern.test(pullRequest.head.ref)) {
+              errors.push("Topic branches targeting `staging` must follow the approved prefix and kebab-case naming convention.");
+            }
+
+            if (!['main', 'staging'].includes(pullRequest.base.ref)) {
+              errors.push("Pull requests must target `staging`, except the manual `staging` to `main` release pull request.");
+            }
+
+            if (pullRequest.head.ref !== "staging" && !titlePattern.test(pullRequest.title)) {
+              errors.push("The pull request title must use Conventional Commit form, for example `feat(api): add evidence query`. ");
+            }
+
+            const body = pullRequest.body || "";
+            for (const section of requiredSections) {
+              if (!body.includes(section)) {
+                errors.push(`Missing required pull request section: \`${section}\`.`);
+              }
+            }
+
+            if (pullRequest.draft) {
+              errors.push("The pull request is still a draft.");
+            }
+
+            const marker = "<!-- orbitos-pr-policy -->";
+            const status = errors.length === 0
+              ? "✅ Branch, title, and pull request description satisfy the OrbitOS merge-readiness policy. Human approval and all required checks are still required."
+              : `❌ This pull request is not merge-ready:\n\n${errors.map((error) => `- ${error}`).join("\n")}`;
+            const commentBody = `${marker}\n## OrbitOS PR readiness\n\n${status}\n\n_Automated policy review does not approve this pull request._`;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pullRequest.number,
+              per_page: 100,
+            });
+            const existing = comments.find((comment) => comment.body?.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: commentBody,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pullRequest.number,
+                body: commentBody,
+              });
+            }
+
+            if (errors.length > 0) {
+              core.setFailed(errors.join(" "));
+            }

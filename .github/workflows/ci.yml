@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - staging
+  push:
+    branches:
+      - main
+      - staging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  merge-policy:
+    name: Merge policy
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate branch, title, and pull request body
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        with:
+          script: |
+            const pullRequest = context.payload.pull_request;
+            const errors = [];
+            const branchPattern = /^(?:(?:feat|fix|docs|refactor|test|chore|ci|hotfix|revert)\/[a-z0-9]+(?:-[a-z0-9]+)*|release\/v\d+\.\d+\.\d+)$/;
+            const titlePattern = /^(feat|fix|docs|refactor|test|chore|ci|revert)(\([a-z0-9-]+\))?!?: .+/;
+            const requiredSections = [
+              "## Summary",
+              "## Validation",
+              "## Risk and rollback",
+              "## Release notes",
+            ];
+
+            if (pullRequest.base.ref === "main" && pullRequest.head.ref !== "staging") {
+              errors.push("Only the `staging` branch may open a pull request to `main`.");
+            }
+
+            if (pullRequest.base.ref === "staging" && !branchPattern.test(pullRequest.head.ref)) {
+              errors.push("Topic branches targeting `staging` must follow the approved naming convention.");
+            }
+
+            if (!["main", "staging"].includes(pullRequest.base.ref)) {
+              errors.push("Pull requests must target `staging`, except the manual `staging` to `main` release pull request.");
+            }
+
+            if (pullRequest.head.ref !== "staging" && !titlePattern.test(pullRequest.title)) {
+              errors.push("The pull request title must use Conventional Commit form.");
+            }
+
+            const body = pullRequest.body || "";
+            for (const section of requiredSections) {
+              if (!body.includes(section)) {
+                errors.push(`Missing required pull request section: ${section}.`);
+              }
+            }
+
+            if (pullRequest.draft) {
+              errors.push("The pull request is still a draft.");
+            }
+
+            if (errors.length > 0) {
+              core.setFailed(errors.join(" "));
+            }
+
+  repository-policy:
+    name: Repository policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check public repository boundary
+        run: node scripts/check-public-boundary.mjs --tracked
+
+      - name: Check pull request diff hygiene
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git diff --check "origin/${BASE_REF}...HEAD"
+
+      - name: Check protected branch diff hygiene
+        if: github.event_name != 'pull_request'
+        run: git diff --check HEAD^
+
+  quality:
+    name: Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm and Node.js
+        uses: pnpm/setup@c8e77b72cd6022852162c92aa10e7e72b7209c9b # v2
+        with:
+          version: 11.19.0
+          runtime: node@24.21.0
+          cache: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Check schemas
+        run: pnpm schema:check
+
+      - name: Build
+        run: pnpm build

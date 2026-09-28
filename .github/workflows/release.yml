@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  publish-release:
+    name: Publish version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out complete history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Determine whether a release is required
+        id: version
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          current_version="$(node --input-type=module -e "import manifest from './package.json' with { type: 'json' }; process.stdout.write(manifest.version)")"
+          previous_version=""
+
+          if [[ -n "${BEFORE_SHA}" ]] && [[ "${BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]]; then
+            previous_manifest="$(git show "${BEFORE_SHA}:package.json" 2>/dev/null || true)"
+            if [[ -n "${previous_manifest}" ]]; then
+              previous_version="$(printf '%s' "${previous_manifest}" | node --input-type=module -e "let input=''; for await (const chunk of process.stdin) input += chunk; process.stdout.write(JSON.parse(input).version)")"
+            fi
+          fi
+
+          if [[ "${current_version}" == "0.0.0" ]] || [[ "${current_version}" == "${previous_version}" ]]; then
+            echo "publish=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          if git rev-parse --verify --quiet "refs/tags/v${current_version}"; then
+            echo "Version tag v${current_version} already exists; refusing to move it." >&2
+            exit 1
+          fi
+
+          echo "publish=true" >> "${GITHUB_OUTPUT}"
+          echo "version=${current_version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create GitHub release and generated notes
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: >-
+          gh release create "v${VERSION}"
+          --target "${GITHUB_SHA}"
+          --title "OrbitOS v${VERSION}"
+          --generate-notes
