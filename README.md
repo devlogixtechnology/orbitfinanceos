@@ -35,6 +35,27 @@ pnpm --filter @orbitos/api dev
 
 The API exposes `GET /health` at `http://127.0.0.1:3000/health`.
 
+## Back-end planning
+
+The proposed delivery sequence from the current foundation to the first
+authenticated evidence, verification, reconciliation, and exception workflow is
+documented in the [back-end development plan](docs/backend/IMPLEMENTATION_PLAN.md).
+
+## Front-end planning
+
+The authenticated web application has not been scaffolded yet. Its proposed
+design language, implementation sequence, and MVP route map are documented in:
+
+- [DESIGN.md](DESIGN.md)
+- [Front-end development plan](docs/frontend/IMPLEMENTATION_PLAN.md)
+- [MVP screen map](docs/frontend/SCREEN_MAP.md)
+
+## Repository operations
+
+Branching, pull-request review, protected `staging` integration, releases,
+rollback, and pull-request health are defined in the
+[GitHub operations plan](docs/operations/GITHUB_OPERATIONS.md).
+
 ## Repository boundary
 
 Business source documents, internal planning, and local coding-agent context are

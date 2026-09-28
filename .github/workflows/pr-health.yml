@@ -1,0 +1,39 @@
+name: PR health
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: pr-health
+  cancel-in-progress: false
+
+jobs:
+  stale-pull-requests:
+    name: Stale pull requests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Identify inactive pull requests
+        uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93 # v11
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          days-before-issue-stale: -1
+          days-before-issue-close: -1
+          days-before-pr-stale: 14
+          days-before-pr-close: -1
+          stale-pr-label: stale
+          exempt-pr-labels: keep-open,blocked,security,release
+          stale-pr-message: >-
+            This pull request has had no activity for 14 days. Please post a
+            concise status update, identify the current blocker and owner, or
+            close it if the work is no longer planned. It will not be closed
+            automatically.
+          remove-pr-stale-when-updated: true
+          operations-per-run: 100
