@@ -194,6 +194,12 @@ Repository merge settings:
 Branch protection is the enforcement boundary. Local hooks improve feedback but
 cannot replace server-side rules.
 
+The GitHub account or organization plan must support protection for this
+repository's visibility. If GitHub refuses branch protection, mark the rollout as
+blocked. Local hooks and Actions may improve detection, but they do not prevent a
+remote user with write permission from bypassing the process. Do not change the
+repository to public or purchase a plan without an explicit owner decision.
+
 ## GitHub Actions configuration
 
 Repository Actions settings should be:

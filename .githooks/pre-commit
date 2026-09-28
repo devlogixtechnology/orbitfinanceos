@@ -1,2 +1,12 @@
 #!/bin/sh
+set -eu
+
+branch="$(git symbolic-ref --quiet --short HEAD || true)"
+case "$branch" in
+  main|staging)
+    echo "Direct commits to $branch are blocked. Create a named topic branch and open a pull request." >&2
+    exit 1
+    ;;
+esac
+
 node scripts/check-public-boundary.mjs --staged
