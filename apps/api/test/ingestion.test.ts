@@ -97,6 +97,15 @@ describe("ingestion and movement API", () => {
     const server = buildServer({ authenticator, ingestionService, integrationRepository: integrations });
     servers.add(server);
 
+    const excessive = await server.inject({
+      headers: { authorization: "Bearer tenant-a" },
+      method: "POST",
+      payload: { endBlock: "3000", schemaVersion: "1" },
+      url: `/v1/integrations/${created.integration.integrationId}/runs`,
+    });
+    expect(excessive.statusCode).toBe(400);
+    expect(excessive.json().error).toMatchObject({ code: "INVALID_RANGE" });
+
     const started = await server.inject({
       headers: { authorization: "Bearer tenant-a" },
       method: "POST",

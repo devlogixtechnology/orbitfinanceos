@@ -1,6 +1,6 @@
 # OrbitOS Back-end Development Plan
 
-Status: Phase 3 verification/reconciliation implementation complete locally; managed acceptance pending
+Status: Phase 4 platform-hardening slice in progress; managed acceptance pending
 
 Depends on: approved identity, infrastructure, and first-network operating decisions
 
@@ -47,6 +47,14 @@ capability probe. Production object storage/retention, deployment, telemetry,
 approved release data, and owner acceptance remain open. The
 BSC transport is not a certified live integration; see the
 [capability matrix](BSC_CAPABILITY_MATRIX.md).
+
+Sprint 4 now includes dependency-aware readiness for PostgreSQL, evidence
+storage, and configured provider networks; validated correlation IDs; redacted
+structured logging; tenant-safe Prometheus request/dependency metrics; bounded
+payload, request-rate, and ingestion-range controls; environment-driven private
+Supabase Storage wiring; and an operator/deployment/rollback runbook. External
+metrics retention/dashboards, managed deployment, recovery rehearsal, approved
+release data, and named acceptance remain release gates.
 
 ## Scope
 

@@ -3,6 +3,40 @@ import { describe, expect, it } from "vitest";
 import { SupabaseStorageEvidenceStore } from "../src/index.js";
 
 describe("Supabase private evidence storage adapter", () => {
+  it("checks the configured private bucket without writing an object", async () => {
+    const requests: Array<{ headers: Headers; method: string; url: string }> = [];
+    const store = new SupabaseStorageEvidenceStore({
+      fetchImplementation: async (input, init) => {
+        requests.push({
+          headers: new Headers(init?.headers),
+          method: init?.method ?? "GET",
+          url: input.toString(),
+        });
+        return new Response(JSON.stringify({ id: "orbitos-evidence-staging", public: false }));
+      },
+      secretKey: "server-only-test-key",
+      supabaseUrl: "https://project.supabase.co",
+    });
+
+    await expect(store.checkReadiness()).resolves.toBeUndefined();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      method: "GET",
+      url: "https://project.supabase.co/storage/v1/bucket/orbitos-evidence-staging",
+    });
+    expect(requests[0]?.headers.get("authorization")).toBe("Bearer server-only-test-key");
+  });
+
+  it("fails readiness when the bucket cannot be inspected", async () => {
+    const store = new SupabaseStorageEvidenceStore({
+      fetchImplementation: () => Promise.resolve(new Response("missing", { status: 404 })),
+      secretKey: "server-only-test-key",
+      supabaseUrl: "https://project.supabase.co",
+    });
+
+    await expect(store.checkReadiness()).rejects.toThrow("Evidence storage bucket is unavailable");
+  });
+
   it("writes immutable tenant-prefixed objects and verifies their digest without leaking the key", async () => {
     const objects = new Map<string, Uint8Array>();
     const requests: Array<{ headers: Headers; method: string; url: string }> = [];

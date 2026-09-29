@@ -56,13 +56,27 @@ import Fastify, {
   type FastifyReply,
   type FastifyRequest,
 } from "fastify";
+import { randomUUID } from "node:crypto";
+
+import {
+  evaluateReadiness,
+  OperabilityMetrics,
+  type ReadinessCheck,
+} from "./operability.js";
 
 export interface BuildServerOptions {
+  readonly apiRateLimit?: {
+    readonly maximumRequests: number;
+    readonly windowMilliseconds: number;
+  };
   readonly authenticator?: SessionAuthenticator;
   readonly ingestionService?: IngestionService;
   readonly integrationRepository?: IntegrationRepository;
   readonly reconciliationService?: ReconciliationQueryService;
   readonly reconciliationRunner?: ReconciliationRunner;
+  readonly maximumIngestionBlockSpan?: bigint;
+  readonly readinessChecks?: readonly ReadinessCheck[];
+  readonly requestBodyLimitBytes?: number;
   readonly signInRateLimit?: {
     readonly maximumAttempts: number;
     readonly windowMilliseconds: number;
@@ -73,7 +87,7 @@ export interface BuildServerOptions {
 
 function sendError(
   reply: FastifyReply,
-  statusCode: 400 | 401 | 403 | 404 | 409 | 429 | 500 | 503,
+  statusCode: 400 | 401 | 403 | 404 | 409 | 413 | 429 | 500 | 503,
   code: string,
   message: string,
 ): FastifyReply {
@@ -86,6 +100,37 @@ function sendError(
       },
     }),
   );
+}
+
+const requestIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/u;
+
+function requestIdFromHeader(header: string | string[] | undefined): string {
+  return typeof header === "string" && requestIdPattern.test(header) ? header : randomUUID();
+}
+
+function consumeRateLimit(
+  attempts: Map<string, { count: number; resetsAt: number }>,
+  key: string,
+  maximumAttempts: number,
+  windowMilliseconds: number,
+  now: number,
+): { allowed: boolean; resetsAt: number } {
+  const current = attempts.get(key);
+  const next = current === undefined || current.resetsAt <= now
+    ? { count: 1, resetsAt: now + windowMilliseconds }
+    : { count: current.count + 1, resetsAt: current.resetsAt };
+  attempts.set(key, next);
+  if (attempts.size > 10_000) {
+    for (const [candidate, value] of attempts) {
+      if (value.resetsAt <= now) attempts.delete(candidate);
+    }
+    while (attempts.size > 10_000) {
+      const oldest = attempts.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      attempts.delete(oldest);
+    }
+  }
+  return { allowed: next.count <= maximumAttempts, resetsAt: next.resetsAt };
 }
 
 async function resolveSession(
@@ -232,6 +277,10 @@ function sendControlError(
 }
 
 export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
+  const apiRateLimit = options.apiRateLimit ?? {
+    maximumRequests: 300,
+    windowMilliseconds: 60_000,
+  };
   const authenticator = options.authenticator ?? denyAllAuthenticator;
   const integrationRepository =
     options.integrationRepository ?? unavailableIntegrationRepository;
@@ -240,19 +289,71 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const reconciliationRunner = options.reconciliationRunner ?? unavailableReconciliationRunner;
   const verificationStore = options.verificationStore ?? unavailableVerificationDecisionStore;
   const sessionService = options.sessionService;
+  const maximumIngestionBlockSpan = options.maximumIngestionBlockSpan ?? 2_000n;
+  const readinessChecks = options.readinessChecks ?? [
+    { check: () => Promise.reject(new Error("Database is not configured")), name: "database" },
+    { check: () => Promise.reject(new Error("Object store is not configured")), name: "object_store" },
+    { check: () => Promise.reject(new Error("Providers are not configured")), name: "providers" },
+  ] satisfies readonly ReadinessCheck[];
   const signInRateLimit = options.signInRateLimit ?? {
     maximumAttempts: 10,
     windowMilliseconds: 60_000,
   };
   const signInAttempts = new Map<string, { count: number; resetsAt: number }>();
+  const apiAttempts = new Map<string, { count: number; resetsAt: number }>();
+  const loggedDependencyStatuses = new Map<string, "degraded" | "ok" | "unavailable">();
+  const metrics = new OperabilityMetrics();
   const server = Fastify({
+    bodyLimit: options.requestBodyLimitBytes ?? 65_536,
+    genReqId: (request) => requestIdFromHeader(request.headers["x-request-id"]),
     logger: {
       redact: [
         "req.headers.authorization",
         "req.headers.cookie",
         "req.headers['x-api-key']",
+        "req.body.password",
+        "req.body.secret",
+        "req.body.secretKey",
       ],
     },
+  });
+
+  server.addHook("onRequest", async (request, reply) => {
+    reply.header("X-Request-Id", request.id);
+    if (!request.url.startsWith("/v1/")) return;
+    const result = consumeRateLimit(
+      apiAttempts,
+      request.ip,
+      apiRateLimit.maximumRequests,
+      apiRateLimit.windowMilliseconds,
+      Date.now(),
+    );
+    if (result.allowed) return;
+    reply.header("Retry-After", Math.max(1, Math.ceil((result.resetsAt - Date.now()) / 1_000)));
+    return sendError(reply, 429, "RATE_LIMITED", "Too many requests. Please try again later.");
+  });
+
+  server.addHook("onResponse", async (request, reply) => {
+    metrics.recordRequest(
+      request.method,
+      request.routeOptions.url ?? "unmatched",
+      reply.statusCode,
+      reply.elapsedTime,
+    );
+  });
+
+  server.setErrorHandler((error, request, reply) => {
+    const errorStatusCode = typeof error === "object" && error !== null && "statusCode" in error
+      ? (error as { statusCode?: unknown }).statusCode
+      : undefined;
+    if (errorStatusCode === 413) {
+      return sendError(reply, 413, "PAYLOAD_TOO_LARGE", "The request payload exceeds the configured limit.");
+    }
+    request.log.error(
+      { errorName: error instanceof Error ? error.name : "UnknownError" },
+      "Unhandled API request failure",
+    );
+    return sendError(reply, 500, "INTERNAL_ERROR", "The request could not be completed.");
   });
 
   server.get("/health", () => ({
@@ -260,16 +361,42 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     status: "ok",
   }));
 
+  server.get("/ready", async (request, reply) => {
+    const readiness = await evaluateReadiness(readinessChecks);
+    for (const check of readiness.checks) {
+      metrics.recordDependency(check.name, check.status);
+      const previousStatus = loggedDependencyStatuses.get(check.name);
+      if (check.status === previousStatus) continue;
+      loggedDependencyStatuses.set(check.name, check.status);
+      if (check.status === "unavailable") {
+        request.log.error({ dependency: check.name }, "Required dependency is unavailable");
+      } else if (check.status === "degraded") {
+        request.log.warn({ dependency: check.name }, "Dependency redundancy is degraded");
+      } else if (previousStatus !== undefined) {
+        request.log.info({ dependency: check.name }, "Dependency recovered");
+      }
+    }
+    return reply.status(readiness.status === "ready" ? 200 : 503).send({
+      ...readiness,
+      name: "OrbitOS API",
+    });
+  });
+
+  server.get("/metrics", (_request, reply) => reply
+    .type("text/plain; version=0.0.4; charset=utf-8")
+    .send(metrics.render()));
+
   server.post("/v1/auth/sessions", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
     const now = Date.now();
-    const currentAttempts = signInAttempts.get(request.ip);
-    const attempts =
-      currentAttempts === undefined || currentAttempts.resetsAt <= now
-        ? { count: 1, resetsAt: now + signInRateLimit.windowMilliseconds }
-        : { ...currentAttempts, count: currentAttempts.count + 1 };
-    signInAttempts.set(request.ip, attempts);
-    if (attempts.count > signInRateLimit.maximumAttempts) {
+    const attempts = consumeRateLimit(
+      signInAttempts,
+      request.ip,
+      signInRateLimit.maximumAttempts,
+      signInRateLimit.windowMilliseconds,
+      now,
+    );
+    if (!attempts.allowed) {
       reply.header(
         "Retry-After",
         Math.max(1, Math.ceil((attempts.resetsAt - now) / 1_000)),
@@ -461,6 +588,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     try {
       const integration = await integrationRepository.getForTenant(session.tenant.tenantId, integrationId.data);
       if (integration === null) return sendError(reply, 404, "NOT_FOUND", "The integration was not found.");
+      const startBlock = BigInt(integration.startingBlock);
+      const endBlock = BigInt(input.data.endBlock);
+      if (endBlock < startBlock || endBlock - startBlock + 1n > maximumIngestionBlockSpan) {
+        return sendError(
+          reply,
+          400,
+          "INVALID_RANGE",
+          "The ingestion range is invalid or exceeds the configured limit.",
+        );
+      }
       const run = await ingestionService.start({
         endBlock: input.data.endBlock,
         integrationId: integration.integrationId,
@@ -469,7 +606,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       });
       return reply.status(201).send(ingestionRunSchema.parse(run));
     } catch (error) {
-      if (error instanceof RangeError) return sendError(reply, 400, "INVALID_RANGE", error.message);
+      if (error instanceof RangeError) {
+        return sendError(reply, 400, "INVALID_RANGE", "The ingestion range is invalid.");
+      }
       return sendIngestionError(request, reply, error, "run start");
     }
   });

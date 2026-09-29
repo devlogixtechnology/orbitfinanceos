@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { mkdir, open, readFile } from "node:fs/promises";
+import { access, mkdir, open, readFile } from "node:fs/promises";
+import { constants } from "node:fs";
 import { join, resolve } from "node:path";
 
 import {
@@ -79,6 +80,7 @@ export interface DurableEvidenceObject {
 
 export interface DurableEvidenceStore {
   append(input: DurableEvidenceInput): Promise<DurableEvidenceObject>;
+  checkReadiness(): Promise<void>;
   readByDigest(tenantId: string, digest: string): Promise<Uint8Array>;
   readMetadata(tenantId: string, evidenceId: string): Promise<DurableEvidenceObject>;
   verifyIntegrity(tenantId: string, evidenceId: string): Promise<boolean>;
@@ -118,6 +120,11 @@ export class FilesystemEvidenceStore implements DurableEvidenceStore {
 
   constructor(rootDirectory: string) {
     this.rootDirectory = resolve(rootDirectory);
+  }
+
+  async checkReadiness(): Promise<void> {
+    await mkdir(this.rootDirectory, { recursive: true });
+    await access(this.rootDirectory, constants.R_OK | constants.W_OK);
   }
 
   async append(input: DurableEvidenceInput): Promise<DurableEvidenceObject> {
@@ -216,16 +223,26 @@ export class SupabaseStorageEvidenceStore implements DurableEvidenceStore {
   private readonly bucket: string;
   private readonly fetchImplementation: typeof fetch;
   private readonly secretKey: string;
+  private readonly storageApiUrl: string;
   private readonly storageBaseUrl: string;
 
   constructor(options: SupabaseStorageEvidenceStoreOptions) {
     this.bucket = options.bucket ?? "orbitos-evidence-staging";
     this.fetchImplementation = options.fetchImplementation ?? fetch;
     this.secretKey = options.secretKey;
-    this.storageBaseUrl = `${options.supabaseUrl.replace(/\/$/u, "")}/storage/v1/object`;
+    this.storageApiUrl = `${options.supabaseUrl.replace(/\/$/u, "")}/storage/v1`;
+    this.storageBaseUrl = `${this.storageApiUrl}/object`;
     if (this.secretKey.length === 0) {
       throw new TypeError("A server-only Supabase secret key is required");
     }
+  }
+
+  async checkReadiness(): Promise<void> {
+    const response = await this.fetchImplementation(
+      `${this.storageApiUrl}/bucket/${encodeURIComponent(this.bucket)}`,
+      { headers: this.headers(), method: "GET" },
+    );
+    if (!response.ok) throw new Error("Evidence storage bucket is unavailable");
   }
 
   async append(input: DurableEvidenceInput): Promise<DurableEvidenceObject> {

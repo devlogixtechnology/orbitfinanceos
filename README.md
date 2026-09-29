@@ -92,7 +92,8 @@ Run the minimal API locally with:
 pnpm --filter @orbitos/api dev
 ```
 
-The API exposes `GET /health` at `http://127.0.0.1:3000/health` and an
+The API exposes process liveness at `GET /health`, dependency readiness at
+`GET /ready`, tenant-safe Prometheus metrics at `GET /metrics`, and an
 authenticated `GET /v1/session` contract plus tenant-scoped
 integration, bounded-run, and exact movement contracts. The default
 authenticator denies every credential. Setting `DATABASE_URL` activates the
@@ -102,6 +103,13 @@ bounded ingestion automatically rechecks each movement through every configured
 independence group before a verified decision can be recorded. The web application exchanges credentials server-to-server
 and stores only an opaque session token in an HTTP-only cookie. Production must
 terminate TLS and leave secure cookies enabled.
+
+For staging evidence storage, configure `SUPABASE_URL`, a server-only
+`SUPABASE_SECRET_KEY`, and an existing private `SUPABASE_EVIDENCE_BUCKET`.
+Supplying only one of the URL/key pair fails startup rather than silently falling
+back to local storage. Operational probes, alert thresholds, incident response,
+deployment, and rollback are documented in the
+[operator runbook](docs/operations/OPERATOR_RUNBOOK.md).
 
 ## Back-end planning
 

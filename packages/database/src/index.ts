@@ -71,6 +71,12 @@ export function createDatabase(
   });
 }
 
+export async function checkDatabaseReadiness(
+  database: Kysely<DatabaseSchema>,
+): Promise<void> {
+  await sql`select 1`.execute(database);
+}
+
 export async function withTenantTransaction<T>(
   database: Kysely<DatabaseSchema>,
   tenantId: string,
