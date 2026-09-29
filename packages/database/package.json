@@ -10,17 +10,27 @@
     }
   },
   "scripts": {
+    "auth:bootstrap-staging": "tsx scripts/bootstrap-staging-user.ts",
     "build": "tsc -p tsconfig.json",
-    "lint": "eslint src test --max-warnings=0",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "lint": "eslint scripts src test --max-warnings=0",
     "schema:check": "vitest run test/migration-contract.test.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json"
   },
   "dependencies": {
+    "@orbitos/authz": "workspace:*",
+    "@orbitos/canonical-model": "workspace:*",
+    "@orbitos/evidence-core": "workspace:*",
+    "@orbitos/ingestion-core": "workspace:*",
+    "@orbitos/integration-core": "workspace:*",
+    "@orbitos/reconciliation-core": "workspace:*",
+    "@orbitos/verification-core": "workspace:*",
     "kysely": "catalog:",
     "pg": "catalog:"
   },
   "devDependencies": {
-    "@types/pg": "8.23.1"
+    "@types/pg": "8.23.1",
+    "embedded-postgres": "18.4.0-beta.17"
   }
 }

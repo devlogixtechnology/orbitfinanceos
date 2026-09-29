@@ -1,6 +1,6 @@
 # OrbitOS Back-end Development Plan
 
-Status: proposed implementation plan
+Status: Phase 3 verification/reconciliation implementation complete locally; managed acceptance pending
 
 Depends on: approved identity, infrastructure, and first-network operating decisions
 
@@ -21,17 +21,32 @@ without claiming that those capabilities already exist.
 The repository currently provides:
 
 - a strict TypeScript, pnpm, and Turborepo workspace;
-- a health-only Fastify API;
+- a Fastify API with process health and a versioned session-context route;
+- first-party, fail-closed password authentication with explicit roles,
+  permissions, lockout/rate limiting, and revocable opaque sessions;
+- tenant-scoped integration read/create contracts backed by a safe repository
+  boundary and audit-event output;
+- a BSC JSON-RPC transport that preserves response bytes before validation,
+  verifies chain identity, bounds retries/timeouts, and has golden fixtures;
 - Zod runtime contracts for provider-neutral canonical records;
 - exact BigInt-backed decimal operations;
-- an in-memory evidence/replay adapter for tests;
-- Kysely and `pg` database bootstrap code; and
-- a proposed PostgreSQL tenant/evidence migration with structural checks.
+- in-memory replay plus filesystem-backed content-addressed evidence adapters;
+- Kysely and `pg` database bootstrap code with a PostgreSQL integration/audit
+  repository; and
+- PostgreSQL tenant/evidence and platform migrations verified against an embedded
+  real PostgreSQL server and non-bypass application role.
 
-The current migration has not yet been proven against a live PostgreSQL instance.
-Authentication, a durable evidence object store, operational APIs, external
-connectors, verification, reconciliation, exception workflows, and deployment
-remain unimplemented.
+The executable database suite proves fail-closed RLS, cross-tenant denial,
+transaction-local tenant context reset, durable integration persistence,
+immutable verification/reconciliation history, protected exception source facts,
+and append-only audit behavior. Independent BSC verification queries distinct
+provider groups and applies the configured finality policy; exact reconciliation,
+reorg invalidation, stable exceptions, and workflow audit are integrated through
+the API. Public BSC endpoints are access-tested by the dated, evidence-first
+capability probe. Production object storage/retention, deployment, telemetry,
+approved release data, and owner acceptance remain open. The
+BSC transport is not a certified live integration; see the
+[capability matrix](BSC_CAPABILITY_MATRIX.md).
 
 ## Scope
 

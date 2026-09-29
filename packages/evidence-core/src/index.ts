@@ -1,4 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { mkdir, open, readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
 import {
   sourceRecordSchema,
@@ -49,6 +51,264 @@ export interface AppendResult {
 
 export class EvidenceIdentityConflictError extends Error {
   override readonly name = "EvidenceIdentityConflictError";
+}
+
+export interface DurableEvidenceInput {
+  readonly attributes?: Readonly<Record<string, string>>;
+  readonly evidenceId: string;
+  readonly independenceGroup: string;
+  readonly integrationId: string;
+  readonly observedAt: string;
+  readonly provider: string;
+  readonly rawBytes: Uint8Array;
+  readonly tenantId: string;
+}
+
+export interface DurableEvidenceObject {
+  readonly attributes: Readonly<Record<string, string>>;
+  readonly byteLength: string;
+  readonly evidenceId: string;
+  readonly independenceGroup: string;
+  readonly integrationId: string;
+  readonly objectUri: string;
+  readonly observedAt: string;
+  readonly provider: string;
+  readonly sha256: string;
+  readonly tenantId: string;
+}
+
+export interface DurableEvidenceStore {
+  append(input: DurableEvidenceInput): Promise<DurableEvidenceObject>;
+  readByDigest(tenantId: string, digest: string): Promise<Uint8Array>;
+  readMetadata(tenantId: string, evidenceId: string): Promise<DurableEvidenceObject>;
+  verifyIntegrity(tenantId: string, evidenceId: string): Promise<boolean>;
+}
+
+const safeIdentifierPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const digestPattern = /^[0-9a-f]{64}$/u;
+
+function assertSafeIdentifier(value: string, label: string): void {
+  if (!safeIdentifierPattern.test(value)) {
+    throw new TypeError(`${label} must be a UUID`);
+  }
+}
+
+async function writeExclusive(path: string, content: Uint8Array | string): Promise<boolean> {
+  let handle;
+  try {
+    handle = await open(path, "wx", 0o600);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      return false;
+    }
+    throw error;
+  }
+
+  try {
+    await handle.writeFile(content);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  return true;
+}
+
+export class FilesystemEvidenceStore implements DurableEvidenceStore {
+  private readonly rootDirectory: string;
+
+  constructor(rootDirectory: string) {
+    this.rootDirectory = resolve(rootDirectory);
+  }
+
+  async append(input: DurableEvidenceInput): Promise<DurableEvidenceObject> {
+    assertSafeIdentifier(input.tenantId, "tenantId");
+    assertSafeIdentifier(input.integrationId, "integrationId");
+    assertSafeIdentifier(input.evidenceId, "evidenceId");
+
+    const digest = sha256(input.rawBytes);
+    const tenantDirectory = join(this.rootDirectory, input.tenantId);
+    const objectDirectory = join(tenantDirectory, "objects");
+    const metadataDirectory = join(tenantDirectory, "metadata");
+    await Promise.all([
+      mkdir(objectDirectory, { recursive: true }),
+      mkdir(metadataDirectory, { recursive: true }),
+    ]);
+
+    const objectPath = join(objectDirectory, `${digest}.bin`);
+    const objectCreated = await writeExclusive(objectPath, input.rawBytes);
+    if (!objectCreated) {
+      const existingBytes = new Uint8Array(await readFile(objectPath));
+      if (!bytesEqual(existingBytes, input.rawBytes)) {
+        throw new EvidenceIdentityConflictError(
+          `Evidence digest ${digest} identifies different bytes`,
+        );
+      }
+    }
+
+    const metadata: DurableEvidenceObject = Object.freeze({
+      attributes: Object.freeze({ ...(input.attributes ?? {}) }),
+      byteLength: input.rawBytes.byteLength.toString(),
+      evidenceId: input.evidenceId,
+      independenceGroup: input.independenceGroup,
+      integrationId: input.integrationId,
+      objectUri: `evidence://${input.tenantId}/${digest}?observation=${input.evidenceId}`,
+      observedAt: input.observedAt,
+      provider: input.provider,
+      sha256: digest,
+      tenantId: input.tenantId,
+    });
+    const serializedMetadata = JSON.stringify(metadata);
+    const metadataPath = join(metadataDirectory, `${input.evidenceId}.json`);
+    const metadataCreated = await writeExclusive(metadataPath, serializedMetadata);
+    if (!metadataCreated) {
+      const existingMetadata = await readFile(metadataPath, "utf8");
+      if (existingMetadata !== serializedMetadata) {
+        throw new EvidenceIdentityConflictError(
+          `Evidence ID ${input.evidenceId} cannot identify different metadata`,
+        );
+      }
+    }
+
+    return metadata;
+  }
+
+  async readByDigest(tenantId: string, digest: string): Promise<Uint8Array> {
+    assertSafeIdentifier(tenantId, "tenantId");
+    if (!digestPattern.test(digest)) {
+      throw new TypeError("digest must be a lowercase SHA-256 value");
+    }
+    return new Uint8Array(
+      await readFile(join(this.rootDirectory, tenantId, "objects", `${digest}.bin`)),
+    );
+  }
+
+  async readMetadata(
+    tenantId: string,
+    evidenceId: string,
+  ): Promise<DurableEvidenceObject> {
+    assertSafeIdentifier(tenantId, "tenantId");
+    assertSafeIdentifier(evidenceId, "evidenceId");
+    const content = await readFile(
+      join(this.rootDirectory, tenantId, "metadata", `${evidenceId}.json`),
+      "utf8",
+    );
+    return JSON.parse(content) as DurableEvidenceObject;
+  }
+
+  async verifyIntegrity(tenantId: string, evidenceId: string): Promise<boolean> {
+    const metadata = await this.readMetadata(tenantId, evidenceId);
+    const rawBytes = await this.readByDigest(tenantId, metadata.sha256);
+    return (
+      rawBytes.byteLength.toString() === metadata.byteLength &&
+      sha256(rawBytes) === metadata.sha256
+    );
+  }
+}
+
+export interface SupabaseStorageEvidenceStoreOptions {
+  readonly bucket?: string;
+  readonly fetchImplementation?: typeof fetch;
+  readonly secretKey: string;
+  readonly supabaseUrl: string;
+}
+
+export class SupabaseStorageEvidenceStore implements DurableEvidenceStore {
+  private readonly bucket: string;
+  private readonly fetchImplementation: typeof fetch;
+  private readonly secretKey: string;
+  private readonly storageBaseUrl: string;
+
+  constructor(options: SupabaseStorageEvidenceStoreOptions) {
+    this.bucket = options.bucket ?? "orbitos-evidence-staging";
+    this.fetchImplementation = options.fetchImplementation ?? fetch;
+    this.secretKey = options.secretKey;
+    this.storageBaseUrl = `${options.supabaseUrl.replace(/\/$/u, "")}/storage/v1/object`;
+    if (this.secretKey.length === 0) {
+      throw new TypeError("A server-only Supabase secret key is required");
+    }
+  }
+
+  async append(input: DurableEvidenceInput): Promise<DurableEvidenceObject> {
+    assertSafeIdentifier(input.tenantId, "tenantId");
+    assertSafeIdentifier(input.integrationId, "integrationId");
+    assertSafeIdentifier(input.evidenceId, "evidenceId");
+    const digest = sha256(input.rawBytes);
+    const objectName = `${input.tenantId}/objects/${digest}.bin`;
+    await this.putImmutable(objectName, input.rawBytes, "application/octet-stream");
+    const metadata: DurableEvidenceObject = Object.freeze({
+      attributes: Object.freeze({ ...(input.attributes ?? {}) }),
+      byteLength: input.rawBytes.byteLength.toString(),
+      evidenceId: input.evidenceId,
+      independenceGroup: input.independenceGroup,
+      integrationId: input.integrationId,
+      objectUri: `supabase://${this.bucket}/${objectName}?observation=${input.evidenceId}`,
+      observedAt: input.observedAt,
+      provider: input.provider,
+      sha256: digest,
+      tenantId: input.tenantId,
+    });
+    await this.putImmutable(
+      `${input.tenantId}/metadata/${input.evidenceId}.json`,
+      new TextEncoder().encode(JSON.stringify(metadata)),
+      "application/json",
+    );
+    return metadata;
+  }
+
+  async readByDigest(tenantId: string, digest: string): Promise<Uint8Array> {
+    assertSafeIdentifier(tenantId, "tenantId");
+    if (!digestPattern.test(digest)) throw new TypeError("digest must be a lowercase SHA-256 value");
+    return this.get(`${tenantId}/objects/${digest}.bin`);
+  }
+
+  async readMetadata(tenantId: string, evidenceId: string): Promise<DurableEvidenceObject> {
+    assertSafeIdentifier(tenantId, "tenantId");
+    assertSafeIdentifier(evidenceId, "evidenceId");
+    const bytes = await this.get(`${tenantId}/metadata/${evidenceId}.json`);
+    return JSON.parse(new TextDecoder().decode(bytes)) as DurableEvidenceObject;
+  }
+
+  async verifyIntegrity(tenantId: string, evidenceId: string): Promise<boolean> {
+    const metadata = await this.readMetadata(tenantId, evidenceId);
+    const bytes = await this.readByDigest(tenantId, metadata.sha256);
+    return bytes.byteLength.toString() === metadata.byteLength && sha256(bytes) === metadata.sha256;
+  }
+
+  private headers(contentType?: string): Record<string, string> {
+    return {
+      apikey: this.secretKey,
+      authorization: `Bearer ${this.secretKey}`,
+      ...(contentType === undefined ? {} : { "content-type": contentType }),
+    };
+  }
+
+  private objectUrl(name: string): string {
+    return `${this.storageBaseUrl}/${encodeURIComponent(this.bucket)}/${name.split("/").map(encodeURIComponent).join("/")}`;
+  }
+
+  private async get(name: string): Promise<Uint8Array> {
+    const response = await this.fetchImplementation(this.objectUrl(name), {
+      headers: this.headers(),
+      method: "GET",
+    });
+    if (!response.ok) throw new Error(`Evidence object read failed with status ${response.status}`);
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
+  private async putImmutable(name: string, bytes: Uint8Array, contentType: string): Promise<void> {
+    const response = await this.fetchImplementation(this.objectUrl(name), {
+      body: bytes,
+      headers: { ...this.headers(contentType), "x-upsert": "false" },
+      method: "POST",
+    });
+    if (response.ok) return;
+    if (response.status === 400 || response.status === 409) {
+      const existing = await this.get(name);
+      if (bytesEqual(existing, bytes)) return;
+      throw new EvidenceIdentityConflictError(`Evidence object ${name} already contains different bytes`);
+    }
+    throw new Error(`Evidence object write failed with status ${response.status}`);
+  }
 }
 
 export function sha256(rawBytes: Uint8Array): string {

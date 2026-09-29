@@ -1,5 +1,3 @@
-BEGIN;
-
 CREATE SCHEMA IF NOT EXISTS orbit;
 
 CREATE FUNCTION orbit.current_tenant_id()
@@ -153,5 +151,3 @@ ALTER TABLE orbit.outbox_events FORCE ROW LEVEL SECURITY;
 CREATE POLICY outbox_events_tenant_scope ON orbit.outbox_events
   USING (tenant_id = orbit.current_tenant_id())
   WITH CHECK (tenant_id = orbit.current_tenant_id());
-
-COMMIT;

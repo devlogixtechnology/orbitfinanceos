@@ -1,7 +1,12 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
   EvidenceIdentityConflictError,
+  FilesystemEvidenceStore,
   InMemoryEvidenceStore,
   ingestRawEvidence,
 } from "../src/index.js";
@@ -71,5 +76,45 @@ describe("synthetic raw-evidence ingestion and replay", () => {
       }),
     ).toThrow(EvidenceIdentityConflictError);
     expect(store.size).toBe(1);
+  });
+});
+
+describe("durable filesystem evidence store", () => {
+  it("survives restart and reads exact bytes by digest", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "orbitos-evidence-"));
+    try {
+      const firstStore = new FilesystemEvidenceStore(directory);
+      const stored = await firstStore.append({
+        attributes: { method: "eth_chainId", requestFingerprint: "request-digest" },
+        evidenceId: baseInput.evidenceId,
+        independenceGroup: baseInput.independenceGroup,
+        integrationId: baseInput.integrationId,
+        observedAt: baseInput.observedAt,
+        provider: baseInput.provider,
+        rawBytes: baseInput.rawBytes,
+        tenantId: baseInput.tenantId,
+      });
+
+      const restartedStore = new FilesystemEvidenceStore(directory);
+      await expect(
+        restartedStore.readByDigest(baseInput.tenantId, stored.sha256),
+      ).resolves.toEqual(baseInput.rawBytes);
+      await expect(
+        restartedStore.verifyIntegrity(baseInput.tenantId, baseInput.evidenceId),
+      ).resolves.toBe(true);
+      await expect(
+        restartedStore.append({
+          evidenceId: baseInput.evidenceId,
+          independenceGroup: baseInput.independenceGroup,
+          integrationId: baseInput.integrationId,
+          observedAt: baseInput.observedAt,
+          provider: baseInput.provider,
+          rawBytes: new TextEncoder().encode("different"),
+          tenantId: baseInput.tenantId,
+        }),
+      ).rejects.toThrow(EvidenceIdentityConflictError);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
   });
 });

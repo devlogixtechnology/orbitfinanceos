@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1",
+  "cases": [
+    { "name": "normal-transfer", "transactionStatus": "0x1", "logIndexes": ["0x0"], "values": ["0x64"] },
+    { "name": "multiple-transfer-logs", "transactionStatus": "0x1", "logIndexes": ["0x0", "0x1"], "values": ["0x1", "0x2"] },
+    { "name": "zero-value-transfer", "transactionStatus": "0x1", "logIndexes": ["0x0"], "values": ["0x0"] },
+    { "name": "mint-shaped-transfer", "transactionStatus": "0x1", "from": "0x0000000000000000000000000000000000000000", "logIndexes": ["0x0"], "values": ["0x1"] },
+    { "name": "burn-shaped-transfer", "transactionStatus": "0x1", "to": "0x0000000000000000000000000000000000000000", "logIndexes": ["0x0"], "values": ["0x1"] },
+    { "name": "failed-transaction", "transactionStatus": "0x0", "logIndexes": ["0x0"], "values": ["0x1"] },
+    { "name": "duplicate-response", "transactionStatus": "0x1", "deliveryOrder": ["same", "same"], "logIndexes": ["0x0"], "values": ["0x1"] },
+    { "name": "out-of-order-response", "transactionStatus": "0x1", "deliveryOrder": ["block-2", "block-1"], "logIndexes": ["0x0"], "values": ["0x1"] },
+    { "name": "malformed-response", "malformed": true },
+    { "name": "very-large-exact-amount", "transactionStatus": "0x1", "logIndexes": ["0x0"], "values": ["0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"] }
+  ]
+}

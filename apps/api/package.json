@@ -12,6 +12,15 @@
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json"
   },
   "dependencies": {
+    "@orbitos/authz": "workspace:*",
+    "@orbitos/canonical-model": "workspace:*",
+    "@orbitos/connector-bsc": "workspace:*",
+    "@orbitos/database": "workspace:*",
+    "@orbitos/evidence-core": "workspace:*",
+    "@orbitos/ingestion-core": "workspace:*",
+    "@orbitos/integration-core": "workspace:*",
+    "@orbitos/reconciliation-core": "workspace:*",
+    "@orbitos/verification-core": "workspace:*",
     "fastify": "catalog:"
   }
 }

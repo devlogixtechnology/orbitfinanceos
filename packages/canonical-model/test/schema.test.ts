@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import {
+  apiErrorSchema,
   atomicAmountSchema,
   canonicalMovementSchema,
+  sessionContextSchema,
   sourceRecordSchema,
 } from "../src/index.js";
 
@@ -48,5 +50,42 @@ describe("canonical schemas", () => {
       additionalProperties: false,
       type: "object",
     });
+  });
+
+  it("keeps session tenancy server-derived and independently versioned", () => {
+    const session = sessionContextSchema.parse({
+      actor: {
+        actorId: "11111111-1111-4111-8111-111111111111",
+        subject: "identity-provider|operator-1",
+      },
+      authenticatedAt: "2026-09-28T01:00:00.000Z",
+      expiresAt: "2026-09-28T02:00:00.000Z",
+      permissions: ["evidence:read"],
+      roles: ["operator"],
+      schemaVersion: "1",
+      tenant: {
+        displayName: "Synthetic Treasury",
+        tenantId: "22222222-2222-4222-8222-222222222222",
+      },
+    });
+
+    expect(session.tenant.tenantId).toBe(
+      "22222222-2222-4222-8222-222222222222",
+    );
+    expect(() =>
+      sessionContextSchema.parse({ ...session, tenantId: session.tenant.tenantId }),
+    ).toThrow();
+  });
+
+  it("requires a request ID in the shared API error envelope", () => {
+    expect(
+      apiErrorSchema.parse({
+        error: {
+          code: "AUTHENTICATION_REQUIRED",
+          message: "A credential is required.",
+          requestId: "request-1",
+        },
+      }),
+    ).toMatchObject({ error: { requestId: "request-1" } });
   });
 });

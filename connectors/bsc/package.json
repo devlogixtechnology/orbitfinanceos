@@ -1,0 +1,26 @@
+{
+  "name": "@orbitos/connector-bsc",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src test --max-warnings=0",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json"
+  },
+  "dependencies": {
+    "@orbitos/canonical-model": "workspace:*",
+    "@orbitos/evidence-core": "workspace:*",
+    "@orbitos/ingestion-core": "workspace:*",
+    "@orbitos/integration-core": "workspace:*",
+    "@orbitos/verification-core": "workspace:*",
+    "zod": "catalog:"
+  }
+}

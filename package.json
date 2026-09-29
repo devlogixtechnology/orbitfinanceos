@@ -10,22 +10,35 @@
     "pnpm": ">=11.19.0 <12"
   },
   "scripts": {
+    "auth:bootstrap-staging": "pnpm --filter @orbitos/database auth:bootstrap-staging",
     "build": "turbo run build",
+    "db:migrate": "pnpm --filter @orbitos/database db:migrate",
     "dev": "turbo run dev --parallel",
     "guard:public": "node scripts/check-public-boundary.mjs --tracked",
+    "guard:secrets": "node scripts/check-secrets.mjs --worktree",
+    "guard:secrets:self-test": "node scripts/check-secrets.mjs --self-test",
     "lint": "turbo run lint",
+    "probe:bsc": "tsx scripts/probe-bsc-capabilities.ts",
     "schema:check": "turbo run schema:check",
     "test": "turbo run test",
+    "test:browser": "pnpm --filter @orbitos/web test:browser",
     "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "24.19.0",
     "eslint": "10.11.0",
-    "turbo": "2.11.5",
     "tsx": "4.23.15",
+    "turbo": "2.11.5",
     "typescript": "6.0.3",
     "typescript-eslint": "8.70.1",
     "vitest": "5.0.2"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "24.21.0",
+      "onFail": "download"
+    }
   }
 }

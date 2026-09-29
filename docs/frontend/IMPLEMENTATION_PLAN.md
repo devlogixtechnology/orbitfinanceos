@@ -1,6 +1,6 @@
 # OrbitOS Front-end Development Plan
 
-Status: proposed implementation plan
+Status: Sprint 3 verification/reconciliation/exception experience implemented locally; managed acceptance pending
 
 Depends on: versioned operational API contracts and authenticated tenant context
 
@@ -43,8 +43,15 @@ evidence flow before release.
 
 ## Technical baseline
 
-The repository currently has no `apps/web` package. Front-end implementation
-should add it as a bounded workspace package only when development begins.
+The repository now has a bounded `apps/web` package with a server-rendered,
+fail-closed application shell, first-party sign-in/sign-out, durable API-backed
+integration creation/listing, separate verification dimensions, exact
+reconciliation list/detail and run controls, exception queue/detail plus
+authorized audited workflow updates, dual-theme tokens, component coverage, and
+Playwright coverage against its production Next.js build for tenant rendering,
+security headers, navigation, controlled states, theme persistence, keyboard use,
+session revocation, ingestion, exact reconciliation, and exception resolution.
+Managed application deployment and manual accessibility/control approval remain open.
 
 Proposed baseline:
 

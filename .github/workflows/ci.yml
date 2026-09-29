@@ -85,6 +85,12 @@ jobs:
       - name: Check public repository boundary
         run: node scripts/check-public-boundary.mjs --tracked
 
+      - name: Prove secret detection with a safe seeded fixture
+        run: pnpm guard:secrets:self-test
+
+      - name: Scan tracked files for credentials
+        run: node scripts/check-secrets.mjs --tracked
+
       - name: Check pull request diff hygiene
         if: github.event_name == 'pull_request'
         env:
@@ -115,6 +121,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install browser runtime
+        run: |
+          pnpm --filter @orbitos/web exec playwright install-deps chromium
+          pnpm --filter @orbitos/web exec playwright install chromium --no-shell
+
       - name: Lint
         run: pnpm lint
 
@@ -123,6 +134,9 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - name: Test authenticated browser path
+        run: pnpm test:browser
 
       - name: Check schemas
         run: pnpm schema:check

@@ -10,3 +10,4 @@ case "$branch" in
 esac
 
 node scripts/check-public-boundary.mjs --staged
+node scripts/check-secrets.mjs --staged
