@@ -3,11 +3,14 @@
 import {
   createIngestionRunRequestSchema,
   createIntegrationRequestSchema,
+  configureDataConnectionRequestSchema,
+  csvImportRequestSchema,
   updateIntegrationRequestSchema,
   uuidSchema,
 } from "@orbitos/canonical-model";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { Buffer } from "node:buffer";
 
 import { fetchAuthorizedApi } from "../../../lib/session";
 
@@ -21,6 +24,56 @@ const providerGroups = {
     { endpointReference: "https://rpc.sentio.xyz/bsc-testnet", groupId: "sentio-testnet", independenceGroup: "sentio" },
   ],
 } as const;
+
+export async function configureDataConnection(formData: FormData): Promise<never> {
+  const provider = formData.get("provider");
+  const publicConfiguration = provider === "quickbooks"
+    ? {
+        companyId: formData.get("companyId"),
+        environment: formData.get("environment"),
+      }
+    : {
+        baseUrl: formData.get("baseUrl"),
+        workspaceId: formData.get("workspaceId"),
+      };
+  const input = configureDataConnectionRequestSchema.safeParse({
+    displayName: formData.get("displayName"),
+    provider,
+    publicConfiguration,
+    schemaVersion: "1",
+    secretReference: formData.get("secretReference"),
+  });
+  if (!input.success) redirect("/app/integrations?error=connection-invalid");
+  const response = await fetchAuthorizedApi("/v1/data-connections", {
+    body: JSON.stringify(input.data),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (response === null || !response.ok) redirect("/app/integrations?error=connection-unavailable");
+  revalidatePath("/app/integrations");
+  redirect("/app/integrations?connected=1");
+}
+
+export async function uploadCsvImport(formData: FormData): Promise<never> {
+  const candidate = formData.get("csvFile");
+  if (!(candidate instanceof File) || candidate.size === 0 || candidate.size > 1_048_576) {
+    redirect("/app/integrations?error=csv-invalid");
+  }
+  const input = csvImportRequestSchema.safeParse({
+    contentBase64: Buffer.from(await candidate.arrayBuffer()).toString("base64"),
+    fileName: candidate.name,
+    schemaVersion: "1",
+  });
+  if (!input.success) redirect("/app/integrations?error=csv-invalid");
+  const response = await fetchAuthorizedApi("/v1/csv-imports", {
+    body: JSON.stringify(input.data),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (response === null || !response.ok) redirect("/app/integrations?error=csv-unavailable");
+  revalidatePath("/app/integrations");
+  redirect("/app/integrations?imported=1");
+}
 
 export async function createIntegration(formData: FormData): Promise<never> {
   const rawChainId = formData.get("chainId");

@@ -19,14 +19,14 @@ export default async function PlatformPage({
       <section className="control-hero">
         <div>
           <p className="eyebrow">OrbitOS master control</p>
-          <h1>Tenant network</h1>
-          <p>Provision and govern the companies that resell OrbitOS to their own customers, without crossing their operational data boundaries.</p>
+          <h1>Company network</h1>
+          <p>Provision complete, login-ready workspaces for companies that resell OrbitOS to their own customers.</p>
         </div>
-        <div className="authority-badge"><span>Platform authority</span><strong>{snapshot?.tenants.length ?? "—"} tenants</strong></div>
+        <div className="authority-badge"><span>Platform authority</span><strong>{snapshot === null ? "— companies" : `${snapshot.tenants.length} ${snapshot.tenants.length === 1 ? "company" : "companies"}`}</strong></div>
       </section>
 
-      {status.created === "1" ? <p className="success-alert">Tenant created with a reserved OrbitOS subdomain.</p> : null}
-      {status.error !== undefined ? <p className="form-error">The tenant could not be created. Check the slug and try again.</p> : null}
+      {status.created === "1" ? <p className="success-alert">Company workspace and first administrator created. The login is ready now.</p> : null}
+      {status.error !== undefined ? <p className="form-error">The workspace could not be created. Check the slug, administrator email, and password.</p> : null}
 
       <section className="control-kpis" aria-label="Platform summary">
         <div><Buildings size={20} /><span>Companies</span><strong>{snapshot?.tenants.length ?? "—"}</strong></div>
@@ -36,11 +36,11 @@ export default async function PlatformPage({
 
       <div className="control-split">
         <section className="control-panel">
-          <div className="section-heading"><p className="eyebrow">Company inventory</p><h2>Reseller tenants</h2></div>
+          <div className="section-heading"><p className="eyebrow">Company inventory</p><h2>Reseller companies</h2></div>
           {snapshot === null ? (
-            <div className="inline-alert"><strong>Control plane unavailable</strong>Tenant records could not be loaded.</div>
+            <div className="inline-alert"><strong>Control plane unavailable</strong>Company records could not be loaded.</div>
           ) : snapshot.tenants.length === 0 ? (
-            <div className="empty-state"><strong>No reseller tenants</strong><span>Create the first company workspace.</span></div>
+            <div className="empty-state"><strong>No reseller companies</strong><span>Create the first login-ready workspace.</span></div>
           ) : (
             <div className="tenant-stack">
               {snapshot.tenants.map((tenant) => {
@@ -59,15 +59,22 @@ export default async function PlatformPage({
         </section>
 
         <aside className="control-panel form-panel">
-          <div className="section-heading"><p className="eyebrow">Provision</p><h2>New tenant</h2></div>
+          <div className="section-heading"><p className="eyebrow">Provision</p><h2>New company workspace</h2></div>
           {canCreate ? (
             <form action={createTenant} className="configuration-form embedded-form">
-              <label htmlFor="tenant-display-name">Company name</label>
-              <input id="tenant-display-name" name="displayName" placeholder="Albore Capital" required />
-              <label htmlFor="tenant-slug">Workspace slug</label>
-              <div className="domain-input"><input id="tenant-slug" name="slug" pattern="[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?" placeholder="albore" required /><span>.orbitos.devlogix.com.pk</span></div>
-              <p className="form-help">The platform route is reserved immediately. DNS activation remains explicit and auditable.</p>
-              <PendingSubmitButton className="primary-button" pendingLabel="Creating tenant">Create tenant</PendingSubmitButton>
+              <label htmlFor="company-display-name">Company name</label>
+              <input id="company-display-name" name="displayName" placeholder="Utopia Holdings" required />
+              <label htmlFor="company-slug">Workspace slug</label>
+              <div className="domain-input"><input id="company-slug" name="slug" pattern="[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?" placeholder="utopia" required /><span>.orbitos.devlogix.com.pk</span></div>
+              <div className="form-divider"><span>First workspace administrator</span></div>
+              <label htmlFor="administrator-display-name">Administrator name</label>
+              <input id="administrator-display-name" name="administratorDisplayName" placeholder="Utopia Administrator" required />
+              <label htmlFor="administrator-email">Administrator email</label>
+              <input autoCapitalize="none" autoComplete="off" id="administrator-email" name="administratorEmail" placeholder="administrator@company.com" required spellCheck={false} type="email" />
+              <label htmlFor="administrator-password">Temporary password</label>
+              <input autoComplete="new-password" id="administrator-password" minLength={12} name="temporaryPassword" required type="password" />
+              <p className="form-help">Workspace, route, and administrator login are committed together. If any step fails, nothing is created.</p>
+              <PendingSubmitButton className="primary-button" pendingLabel="Creating workspace">Create workspace</PendingSubmitButton>
             </form>
           ) : <div className="inline-alert"><strong>Read-only platform view</strong>Your role cannot provision companies.</div>}
         </aside>

@@ -36,7 +36,7 @@ export default async function SignInPage({
           </div>
           <ul className="trust-list">
             <li><ShieldCheck aria-hidden="true" size={20} />Custody-neutral by design</li>
-            <li><Database aria-hidden="true" size={20} />Tenant-isolated records</li>
+            <li><Database aria-hidden="true" size={20} />Company-isolated records</li>
             <li><Fingerprint aria-hidden="true" size={20} />Auditable operator actions</li>
           </ul>
           <div className="environment-banner"><span className="environment-dot" />Secure staging environment</div>
@@ -47,7 +47,7 @@ export default async function SignInPage({
           <p className="eyebrow">Authorized access</p>
           <h1 id="sign-in-heading">Sign in to OrbitOS</h1>
           <p>
-            Continue to your approved tenant workspace. Credentials are exchanged server-to-server and never exposed to the browser session.
+            Continue to your approved company workspace. Credentials are exchanged server-to-server and never exposed to the browser session.
           </p>
           {error !== undefined && errorMessages[error] !== undefined ? (
             <p className="form-error" role="alert">{errorMessages[error]}</p>

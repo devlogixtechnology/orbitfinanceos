@@ -57,6 +57,7 @@ import { Pool, type PoolConfig } from "pg";
 import { createHash, randomBytes } from "node:crypto";
 
 export * from "./control-plane.js";
+export * from "./data-connections.js";
 
 export interface DatabaseSchema {
   readonly [tableName: string]: Record<string, unknown>;

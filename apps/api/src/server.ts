@@ -13,7 +13,13 @@ import {
   billingInvoiceSchema,
   billingSubscriptionSchema,
   canonicalChainMovementSchema,
+  configureDataConnectionRequestSchema,
   controlPlaneSnapshotSchema,
+  csvImportListSchema,
+  csvImportRequestSchema,
+  csvImportSchema,
+  dataConnectionListSchema,
+  dataConnectionSchema,
   createBillingInvoiceRequestSchema,
   createCustomerRequestSchema,
   createDomainRequestSchema,
@@ -33,6 +39,7 @@ import {
   operationalExceptionSchema,
   positionReconciliationListSchema,
   positionReconciliationSchema,
+  provisionWorkspaceRequestSchema,
   signInRequestSchema,
   tenantDomainSchema,
   tenantSchema,
@@ -49,7 +56,9 @@ import {
   ControlPlaneConflictError,
   type ControlPlaneAccess,
   type ControlPlaneRepository,
+  type DataConnectionRepository,
 } from "@orbitos/database";
+import type { DurableEvidenceStore } from "@orbitos/evidence-core";
 import {
   IntegrationRepositoryUnavailableError,
   unavailableIntegrationRepository,
@@ -78,6 +87,7 @@ import Fastify, {
   type FastifyRequest,
 } from "fastify";
 import { randomUUID } from "node:crypto";
+import { Buffer } from "node:buffer";
 
 import {
   evaluateReadiness,
@@ -92,6 +102,8 @@ export interface BuildServerOptions {
   };
   readonly authenticator?: SessionAuthenticator;
   readonly controlPlaneRepository?: ControlPlaneRepository;
+  readonly dataConnectionRepository?: DataConnectionRepository;
+  readonly evidenceStore?: DurableEvidenceStore;
   readonly ingestionService?: IngestionService;
   readonly integrationRepository?: IntegrationRepository;
   readonly reconciliationService?: ReconciliationQueryService;
@@ -105,6 +117,31 @@ export interface BuildServerOptions {
   };
   readonly sessionService?: SessionLifecycleService;
   readonly verificationStore?: VerificationDecisionStore;
+}
+
+function countCsvDataRows(bytes: Uint8Array): number {
+  const content = new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^\uFEFF/u, "");
+  let quoted = false;
+  let records = 0;
+  let hasContent = false;
+  for (let index = 0; index < content.length; index += 1) {
+    const character = content[index];
+    if (character === undefined) continue;
+    if (character === '"') {
+      if (quoted && content[index + 1] === '"') index += 1;
+      else quoted = !quoted;
+    } else if (!quoted && (character === "\n" || character === "\r")) {
+      if (hasContent) records += 1;
+      hasContent = false;
+      if (character === "\r" && content[index + 1] === "\n") index += 1;
+    } else if (!/\s/u.test(character)) {
+      hasContent = true;
+    }
+  }
+  if (quoted) throw new Error("CSV_QUOTE_MISMATCH");
+  if (hasContent) records += 1;
+  if (records < 2) throw new Error("CSV_REQUIRES_HEADER_AND_ROW");
+  return records - 1;
 }
 
 function sendError(
@@ -343,6 +380,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const controlPlaneRepository = options.controlPlaneRepository;
   const integrationRepository =
     options.integrationRepository ?? unavailableIntegrationRepository;
+  const dataConnectionRepository = options.dataConnectionRepository;
+  const evidenceStore = options.evidenceStore;
   const ingestionService = options.ingestionService ?? unavailableIngestionService;
   const reconciliationService = options.reconciliationService ?? unavailableReconciliationQueryService;
   const reconciliationRunner = options.reconciliationRunner ?? unavailableReconciliationRunner;
@@ -570,6 +609,25 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
+  server.post("/v1/control-plane/workspaces", async (request, reply) => {
+    const session = await resolveSession(request, reply, authenticator);
+    if (session === undefined || !requirePermission(session, "platform:tenants:write", reply)) return reply;
+    const input = provisionWorkspaceRequestSchema.safeParse(request.body);
+    if (!input.success) return sendError(reply, 400, "INVALID_REQUEST", "The company workspace configuration is invalid.");
+    if (controlPlaneRepository === undefined) return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "Control-plane persistence is not configured.");
+    try {
+      const passwordHash = await hashPassword(input.data.administrator.temporaryPassword);
+      return reply.status(201).send(tenantSchema.parse(
+        await controlPlaneRepository.provisionWorkspace(controlPlaneAccess(session), {
+          input: input.data,
+          passwordHash,
+        }),
+      ));
+    } catch (error) {
+      return sendControlPlaneError(request, reply, error);
+    }
+  });
+
   server.post("/v1/control-plane/customers", async (request, reply) => {
     const session = await resolveSession(request, reply, authenticator);
     if (session === undefined || !requirePermission(session, "customers:write", reply)) return reply;
@@ -699,6 +757,105 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return sendControlPlaneError(request, reply, error);
     }
   });
+
+  server.get("/v1/data-connections", async (request, reply) => {
+    const session = await resolveSession(request, reply, authenticator);
+    if (session === undefined || !requirePermission(session, "integrations:read", reply)) return reply;
+    if (dataConnectionRepository === undefined) {
+      return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "Data-connection persistence is not configured.");
+    }
+    try {
+      return dataConnectionListSchema.parse({
+        data: await dataConnectionRepository.list(session.tenant.tenantId),
+        schemaVersion: "1",
+      });
+    } catch (error) {
+      request.log.error({ errorName: error instanceof Error ? error.name : "UnknownError" }, "Data connections could not be listed");
+      return sendError(reply, 500, "CONNECTION_LIST_FAILED", "Data connections could not be loaded.");
+    }
+  });
+
+  server.post("/v1/data-connections", async (request, reply) => {
+    const session = await resolveSession(request, reply, authenticator);
+    if (session === undefined || !requirePermission(session, "integrations:write", reply)) return reply;
+    const input = configureDataConnectionRequestSchema.safeParse(request.body);
+    if (!input.success) return sendError(reply, 400, "INVALID_REQUEST", "The connection configuration is invalid.");
+    if (dataConnectionRepository === undefined) {
+      return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "Data-connection persistence is not configured.");
+    }
+    try {
+      return reply.status(201).send(dataConnectionSchema.parse(
+        await dataConnectionRepository.configure(session.tenant.tenantId, input.data),
+      ));
+    } catch (error) {
+      request.log.error({ errorName: error instanceof Error ? error.name : "UnknownError" }, "Data connection could not be configured");
+      return sendError(reply, 500, "CONNECTION_SAVE_FAILED", "The data connection could not be saved.");
+    }
+  });
+
+  server.get("/v1/csv-imports", async (request, reply) => {
+    const session = await resolveSession(request, reply, authenticator);
+    if (session === undefined || !requirePermission(session, "integrations:read", reply)) return reply;
+    if (dataConnectionRepository === undefined) {
+      return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "CSV import persistence is not configured.");
+    }
+    try {
+      return csvImportListSchema.parse({
+        data: await dataConnectionRepository.listCsvImports(session.tenant.tenantId),
+        schemaVersion: "1",
+      });
+    } catch (error) {
+      request.log.error({ errorName: error instanceof Error ? error.name : "UnknownError" }, "CSV imports could not be listed");
+      return sendError(reply, 500, "CSV_IMPORT_LIST_FAILED", "CSV import history could not be loaded.");
+    }
+  });
+
+  server.post(
+    "/v1/csv-imports",
+    { bodyLimit: 1_500_000 },
+    async (request, reply) => {
+      const session = await resolveSession(request, reply, authenticator);
+      if (session === undefined || !requirePermission(session, "integrations:write", reply)) return reply;
+      const input = csvImportRequestSchema.safeParse(request.body);
+      if (!input.success) return sendError(reply, 400, "INVALID_REQUEST", "Select a valid CSV file smaller than 1 MB.");
+      if (dataConnectionRepository === undefined || evidenceStore === undefined) {
+        return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "CSV evidence storage is not configured.");
+      }
+      try {
+        const rawBytes = new Uint8Array(Buffer.from(input.data.contentBase64, "base64"));
+        if (rawBytes.byteLength === 0 || rawBytes.byteLength > 1_048_576) {
+          return sendError(reply, 413, "CSV_TOO_LARGE", "CSV files must be no larger than 1 MB.");
+        }
+        const rowCount = countCsvDataRows(rawBytes);
+        if (rowCount > 50_000) return sendError(reply, 413, "CSV_TOO_MANY_ROWS", "CSV files may contain at most 50,000 data rows.");
+        const importId = randomUUID();
+        const stored = await evidenceStore.append({
+          attributes: { fileName: input.data.fileName, payloadFormat: "csv", rowCount: String(rowCount) },
+          evidenceId: importId,
+          independenceGroup: "customer-upload",
+          integrationId: importId,
+          observedAt: new Date().toISOString(),
+          provider: "csv-upload",
+          rawBytes,
+          tenantId: session.tenant.tenantId,
+        });
+        return reply.status(201).send(csvImportSchema.parse(
+          await dataConnectionRepository.recordCsvImport({
+            byteLength: stored.byteLength,
+            fileName: input.data.fileName,
+            importId,
+            objectUri: stored.objectUri,
+            rowCount: String(rowCount),
+            sha256: stored.sha256,
+            tenantId: session.tenant.tenantId,
+          }),
+        ));
+      } catch (error) {
+        request.log.error({ errorName: error instanceof Error ? error.name : "UnknownError" }, "CSV import failed");
+        return sendError(reply, 400, "CSV_IMPORT_FAILED", "The CSV could not be validated and preserved.");
+      }
+    },
+  );
 
   server.get("/v1/integrations", async (request, reply) => {
     const session = await resolveSession(request, reply, authenticator);

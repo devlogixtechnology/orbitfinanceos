@@ -26,6 +26,7 @@ function session(role: "super_admin" | "tenant_admin" | "admin"): SessionContext
 }
 
 const createTenant = vi.fn<ControlPlaneRepository["createTenant"]>(() => Promise.resolve(tenant));
+const provisionWorkspace = vi.fn<ControlPlaneRepository["provisionWorkspace"]>(() => Promise.resolve(tenant));
 const repository = {
   createCustomer: vi.fn<ControlPlaneRepository["createCustomer"]>(),
   createDomain: vi.fn<ControlPlaneRepository["createDomain"]>(),
@@ -34,6 +35,7 @@ const repository = {
   createSubscription: vi.fn<ControlPlaneRepository["createSubscription"]>(),
   createTenant,
   createUser: vi.fn<ControlPlaneRepository["createUser"]>(),
+  provisionWorkspace,
   snapshot: vi.fn<ControlPlaneRepository["snapshot"]>(),
 } satisfies ControlPlaneRepository;
 
@@ -41,11 +43,42 @@ const servers = new Set<ReturnType<typeof buildServer>>();
 
 afterEach(async () => {
   createTenant.mockClear();
+  provisionWorkspace.mockClear();
   await Promise.all([...servers].map(async (server) => server.close()));
   servers.clear();
 });
 
 describe("reseller control-plane authorization", () => {
+  it("provisions a company and first workspace administrator atomically", async () => {
+    const authenticator: SessionAuthenticator = { authenticate: () => Promise.resolve(session("super_admin")) };
+    const server = buildServer({ authenticator, controlPlaneRepository: repository });
+    servers.add(server);
+
+    const response = await server.inject({
+      headers: { authorization: "Bearer valid" },
+      method: "POST",
+      payload: {
+        administrator: {
+          displayName: "Utopia Administrator",
+          email: "administrator@utopia.example",
+          temporaryPassword: "temporary-password-2026",
+        },
+        displayName: "Utopia",
+        schemaVersion: "1",
+        slug: "utopia",
+      },
+      url: "/v1/control-plane/workspaces",
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toEqual(tenant);
+    expect(provisionWorkspace).toHaveBeenCalledOnce();
+    expect(provisionWorkspace.mock.calls[0]?.[1]).toMatchObject({
+      input: { administrator: { email: "administrator@utopia.example" }, slug: "utopia" },
+    });
+    expect(provisionWorkspace.mock.calls[0]?.[1].passwordHash).not.toContain("temporary-password-2026");
+  });
+
   it("allows a super admin to create a reseller tenant", async () => {
     const authenticator: SessionAuthenticator = { authenticate: () => Promise.resolve(session("super_admin")) };
     const server = buildServer({ authenticator, controlPlaneRepository: repository });

@@ -1,6 +1,6 @@
 export default function AppLoading() {
   return (
-    <main aria-busy="true" aria-label="Loading tenant workspace" className="page loading-page">
+    <main aria-busy="true" aria-label="Loading company workspace" className="page loading-page">
       <header className="page-header loading-header">
         <div className="skeleton skeleton-eyebrow" />
         <div className="skeleton skeleton-title" />
@@ -35,7 +35,7 @@ export default function AppLoading() {
         </div>
       </section>
       <span className="sr-only" role="status">
-        Loading tenant workspace
+        Loading company workspace
       </span>
     </main>
   );

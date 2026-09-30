@@ -36,13 +36,13 @@ test.describe("authenticated tenant shell", () => {
     ).toBeVisible();
     await expect(page.getByRole("link", { name: "Reconciliation" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Exceptions" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Tenants" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Companies" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Users & roles" })).toBeVisible();
   });
 
   test("presents the reseller control plane and role matrix", async ({ page }) => {
-    await page.getByRole("link", { name: "Tenants" }).click();
-    await expect(page.getByRole("heading", { name: "Tenant network" })).toBeVisible();
+    await page.getByRole("link", { name: "Companies" }).click();
+    await expect(page.getByRole("heading", { name: "Company network" })).toBeVisible();
     await expect(page.locator(".tenant-card").getByText("Devlogix OrbitOS Staging")).toBeVisible();
     await page.screenshot({ path: "test-results/control-plane-tenants.png", fullPage: true });
 
@@ -55,8 +55,8 @@ test.describe("authenticated tenant shell", () => {
 
     await page.getByRole("link", { name: "Billing" }).click();
     await expect(page.getByRole("heading", { name: "Billing control" })).toBeVisible();
-    await expect(page.getByText("OrbitOS → Tenant")).toBeVisible();
-    await expect(page.getByText("Tenant → Customer")).toBeVisible();
+    await expect(page.getByText("OrbitOS → Company")).toBeVisible();
+    await expect(page.getByText("Company → Customer")).toBeVisible();
     await page.screenshot({ path: "test-results/control-plane-billing.png", fullPage: true });
   });
 
@@ -83,19 +83,24 @@ test.describe("authenticated tenant shell", () => {
 
     await page.getByRole("link", { exact: true, name: "Integrations" }).click();
     await expect(page).toHaveURL(/\/app\/integrations$/u);
+    await expect(page.getByRole("heading", { name: "Choose a source" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "CSV upload" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "QuickBooks Online" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Fireblocks" })).toBeVisible();
+    await page.screenshot({ path: "test-results/source-catalog.png", fullPage: true });
     await expect(page.getByText("No integrations yet")).toBeVisible();
     await page.getByLabel("Starting block").fill("1000");
     await page.getByLabel("Wallet address").fill("0x1111111111111111111111111111111111111111");
     await page.getByLabel("Token contract").fill("0x2222222222222222222222222222222222222222");
     await page.getByRole("button", { name: "Create integration" }).click();
-    await expect(page.getByText("Integration created and tenant scoped.")).toBeVisible();
+    await expect(page.getByText("Integration created inside this company workspace.")).toBeVisible();
     await expect(page.locator(".integration-cards").getByText("BSC Testnet")).toBeVisible();
     await expect(page.getByText("From block 1000")).toBeVisible();
     const editor = page.locator("details");
     await editor.getByText("Edit source scope").click();
     await editor.getByLabel("Starting block").fill("1001");
     await editor.getByRole("button", { name: "Save source scope" }).click();
-    await expect(page.getByText("Operator action saved with tenant scope.")).toBeVisible();
+    await expect(page.getByText("Operator action saved inside this company workspace.")).toBeVisible();
     await expect(page.getByText("From block 1001")).toBeVisible();
     await page.getByLabel("End block").fill("1001");
     await page.getByRole("button", { name: "Run bounded range" }).click();

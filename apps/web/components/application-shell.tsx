@@ -71,7 +71,7 @@ export function ApplicationShell({
             <span className="environment-dot" />
             <span>Staging control plane</span>
             <span aria-hidden="true" className="topbar-divider">/</span>
-            <strong>{session.roles.includes("super_admin") ? "Platform authority" : "Tenant workspace"}</strong>
+            <strong>{session.roles.includes("super_admin") ? "Platform authority" : "Company workspace"}</strong>
           </div>
           <div className="topbar-identity">
             <CheckCircle aria-hidden="true" color="var(--color-success)" size={18} weight="fill" />

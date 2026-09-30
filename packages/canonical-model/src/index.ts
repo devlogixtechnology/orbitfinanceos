@@ -136,6 +136,65 @@ export const updateIntegrationRequestSchema = z
   .strict()
   .refine((value) => Object.keys(value).length > 0, "At least one field is required");
 
+export const dataConnectionProviderSchema = z.enum(["quickbooks", "fireblocks"]);
+const dataConnectionPublicConfigurationSchema = z
+  .record(z.string().min(1).max(60), z.string().trim().min(1).max(500))
+  .refine((value) => Object.keys(value).length <= 12, "Too many connection settings");
+export const configureDataConnectionRequestSchema = z
+  .object({
+    displayName: z.string().trim().min(2).max(120),
+    provider: dataConnectionProviderSchema,
+    publicConfiguration: dataConnectionPublicConfigurationSchema,
+    schemaVersion: z.literal("1"),
+    secretReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{2,199}$/u),
+  })
+  .strict();
+export const dataConnectionSchema = z
+  .object({
+    connectionId: uuidSchema,
+    createdAt: utcInstantSchema,
+    displayName: z.string().min(2).max(120),
+    hasSecretReference: z.boolean(),
+    provider: dataConnectionProviderSchema,
+    publicConfiguration: dataConnectionPublicConfigurationSchema,
+    schemaVersion: z.literal("1"),
+    status: z.enum(["configured", "disabled"]),
+    tenantId: uuidSchema,
+  })
+  .strict();
+export const dataConnectionListSchema = z
+  .object({ data: z.array(dataConnectionSchema), schemaVersion: z.literal("1") })
+  .strict();
+
+export const csvImportRequestSchema = z
+  .object({
+    contentBase64: z.string().min(4).max(1_400_000).regex(/^[A-Za-z0-9+/]+={0,2}$/u),
+    fileName: z
+      .string()
+      .trim()
+      .regex(/^[^\\/]{1,180}\.csv$/iu)
+      .refine((value) => !value.includes("\0"), "CSV file names cannot contain null bytes"),
+    schemaVersion: z.literal("1"),
+  })
+  .strict();
+export const csvImportSchema = z
+  .object({
+    byteLength: unsignedIntegerStringSchema,
+    createdAt: utcInstantSchema,
+    fileName: z.string().min(1).max(180),
+    importId: uuidSchema,
+    objectUri: z.string().min(1),
+    rowCount: unsignedIntegerStringSchema,
+    schemaVersion: z.literal("1"),
+    sha256: sha256Schema,
+    status: z.literal("preserved"),
+    tenantId: uuidSchema,
+  })
+  .strict();
+export const csvImportListSchema = z
+  .object({ data: z.array(csvImportSchema), schemaVersion: z.literal("1") })
+  .strict();
+
 export const auditEventSchema = z
   .object({
     action: authorizationValueSchema,
@@ -608,6 +667,18 @@ export const createTenantRequestSchema = z
   })
   .strict();
 
+export const provisionWorkspaceRequestSchema = createTenantRequestSchema
+  .extend({
+    administrator: z
+      .object({
+        displayName: z.string().trim().min(2).max(120),
+        email: z.string().trim().toLowerCase().pipe(z.email()),
+        temporaryPassword: z.string().min(12).max(128),
+      })
+      .strict(),
+  })
+  .strict();
+
 export const createCustomerRequestSchema = optionalTargetTenantSchema
   .extend({
     displayName: z.string().trim().min(2).max(120),
@@ -793,6 +864,7 @@ export type BillingSubscription = z.infer<typeof billingSubscriptionSchema>;
 export type BillingInvoice = z.infer<typeof billingInvoiceSchema>;
 export type ControlPlaneSnapshot = z.infer<typeof controlPlaneSnapshotSchema>;
 export type CreateTenantRequest = z.infer<typeof createTenantRequestSchema>;
+export type ProvisionWorkspaceRequest = z.infer<typeof provisionWorkspaceRequestSchema>;
 export type CreateCustomerRequest = z.infer<typeof createCustomerRequestSchema>;
 export type CreateDomainRequest = z.infer<typeof createDomainRequestSchema>;
 export type CreateRoleRequest = z.infer<typeof createRoleRequestSchema>;
@@ -807,6 +879,10 @@ export type Integration = z.infer<typeof integrationSchema>;
 export type UpdateIntegrationRequest = z.infer<
   typeof updateIntegrationRequestSchema
 >;
+export type ConfigureDataConnectionRequest = z.infer<typeof configureDataConnectionRequestSchema>;
+export type DataConnection = z.infer<typeof dataConnectionSchema>;
+export type CsvImport = z.infer<typeof csvImportSchema>;
+export type CsvImportRequest = z.infer<typeof csvImportRequestSchema>;
 export type IngestionRun = z.infer<typeof ingestionRunSchema>;
 export type CreateIngestionRunRequest = z.infer<
   typeof createIngestionRunRequestSchema

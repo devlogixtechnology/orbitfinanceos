@@ -1,21 +1,28 @@
-import { PlugsConnected } from "@phosphor-icons/react/dist/ssr";
+import { CloudArrowUp, FileCsv, PlugsConnected, Vault } from "@phosphor-icons/react/dist/ssr";
 
 import { PendingSubmitButton } from "../../../components/pending-submit-button";
-import { loadIngestionRuns, loadIntegrations } from "../../../lib/session";
+import { loadCsvImports, loadDataConnections, loadIngestionRuns, loadIntegrations } from "../../../lib/session";
 import {
+  configureDataConnection,
   controlIngestionRun,
   createIntegration,
   setIntegrationEnabled,
   startIngestion,
   updateIntegrationConfiguration,
+  uploadCsvImport,
 } from "./actions";
 
 export default async function IntegrationsPage({
   searchParams,
 }: Readonly<{
-  searchParams: Promise<{ created?: string; error?: string; run?: string; updated?: string }>;
+  searchParams: Promise<{ connected?: string; created?: string; error?: string; imported?: string; run?: string; updated?: string }>;
 }>) {
-  const [integrations, runs] = await Promise.all([loadIntegrations(), loadIngestionRuns()]);
+  const [integrations, runs, connections, csvImports] = await Promise.all([
+    loadIntegrations(),
+    loadIngestionRuns(),
+    loadDataConnections(),
+    loadCsvImports(),
+  ]);
   const status = await searchParams;
 
   return (
@@ -23,28 +30,93 @@ export default async function IntegrationsPage({
       <header className="page-header">
         <h1>Integrations</h1>
         <p>
-          Configure an allowlisted wallet and token contract against two independently operated, read-only BNB Smart Chain providers.
+          Bring accounting, custody, spreadsheet, and blockchain sources into one evidence-backed workspace.
         </p>
       </header>
 
+      {status.connected === "1" ? <p className="success-alert" role="status">Secure connection references saved. No provider credential was stored in the application database.</p> : null}
+      {status.imported === "1" ? <p className="success-alert" role="status">CSV validated and preserved as immutable source evidence.</p> : null}
+
       {status.created === "1" ? (
-        <p className="success-alert" role="status">Integration created and tenant scoped.</p>
+        <p className="success-alert" role="status">Integration created inside this company workspace.</p>
       ) : null}
       {status.updated === "1" ? (
-        <p className="success-alert" role="status">Operator action saved with tenant scope.</p>
+        <p className="success-alert" role="status">Operator action saved inside this company workspace.</p>
       ) : null}
       {status.run === "1" ? (
         <p className="success-alert" role="status">Bounded ingestion finished. Review the run and normalized movements.</p>
       ) : null}
       {status.error !== undefined ? (
         <p className="form-error" role="alert">
-          {status.error === "invalid"
+          {status.error === "csv-invalid"
+            ? "Choose a valid UTF-8 CSV under 1 MB with a header and at least one data row."
+            : status.error === "csv-unavailable"
+              ? "The CSV could not be preserved. No partial import was created."
+              : status.error === "connection-invalid"
+                ? "Check the connection identifiers and vault reference."
+                : status.error === "connection-unavailable"
+                  ? "The secure connection references could not be saved."
+                  : status.error === "invalid"
             ? "Check the chain, block number, wallet, and token contract values."
             : status.error === "run"
               ? "The bounded run could not complete. Its checkpoint and quarantine state were preserved."
               : "The integration could not be saved. Please try again."}
         </p>
       ) : null}
+
+      <section aria-labelledby="source-catalog-heading" className="source-catalog">
+        <div className="section-heading source-catalog-heading">
+          <p className="eyebrow">Connect data</p>
+          <h2 id="source-catalog-heading">Choose a source</h2>
+          <p>Every action validates first, shows progress immediately, and either completes fully or leaves no partial configuration.</p>
+        </div>
+
+        <div className="source-card-grid">
+          <article className="source-card source-card-ready">
+            <div className="source-card-head"><span className="source-icon"><FileCsv size={22} /></span><span className="status-pill status-active">Ready</span></div>
+            <div><p className="eyebrow">File import</p><h3>CSV upload</h3><p>Preserve the original file with a SHA-256 digest and record its validated row count.</p></div>
+            <form action={uploadCsvImport} className="source-connect-form">
+              <label htmlFor="csv-file">CSV file</label>
+              <input accept=".csv,text/csv" id="csv-file" name="csvFile" required type="file" />
+              <span className="form-help">UTF-8 · header required · up to 1 MB / 50,000 rows</span>
+              <PendingSubmitButton className="primary-button" pendingLabel="Validating & preserving"><CloudArrowUp size={18} />Upload CSV</PendingSubmitButton>
+            </form>
+            {csvImports !== null && csvImports.length > 0 ? <div className="source-history"><strong>Recent imports</strong>{csvImports.slice(0, 3).map((item) => <span key={item.importId}><span>{item.fileName}</span><small>{Number(item.rowCount).toLocaleString()} rows · {new Date(item.createdAt).toLocaleDateString()}</small></span>)}</div> : null}
+          </article>
+
+          <article className="source-card">
+            <div className="source-card-head"><span className="source-icon source-icon-qb">Q</span><span className="status-pill">{connections?.some((item) => item.provider === "quickbooks") ? "Configured" : "Setup required"}</span></div>
+            <div><p className="eyebrow">Accounting</p><h3>QuickBooks Online</h3><p>Register the company and a server-side vault reference for its OAuth credential bundle.</p></div>
+            <details className="source-setup"><summary>{connections?.some((item) => item.provider === "quickbooks") ? "Update setup" : "Connect QuickBooks"}</summary>
+              <form action={configureDataConnection} className="source-connect-form">
+                <input name="provider" type="hidden" value="quickbooks" />
+                <label htmlFor="qb-name">Connection name</label><input defaultValue="QuickBooks Online" id="qb-name" name="displayName" required />
+                <label htmlFor="qb-company">QuickBooks company ID</label><input id="qb-company" name="companyId" required />
+                <label htmlFor="qb-environment">Environment</label><select defaultValue="sandbox" id="qb-environment" name="environment"><option value="sandbox">Sandbox</option><option value="production">Production</option></select>
+                <label htmlFor="qb-secret">Credential-bundle reference</label><input id="qb-secret" name="secretReference" placeholder="vault://quickbooks/oauth-bundle" required />
+                <p className="form-help">Reference a server-side vault entry containing the client credentials. Never paste credentials into OrbitOS.</p>
+                <PendingSubmitButton className="primary-button" pendingLabel="Saving QuickBooks setup">Save secure setup</PendingSubmitButton>
+              </form>
+            </details>
+          </article>
+
+          <article className="source-card">
+            <div className="source-card-head"><span className="source-icon"><Vault size={22} /></span><span className="status-pill">{connections?.some((item) => item.provider === "fireblocks") ? "Configured" : "Setup required"}</span></div>
+            <div><p className="eyebrow">Custody</p><h3>Fireblocks</h3><p>Register the workspace and a vault reference to a read-only API identity. Transfer permissions are not requested.</p></div>
+            <details className="source-setup"><summary>{connections?.some((item) => item.provider === "fireblocks") ? "Update setup" : "Connect Fireblocks"}</summary>
+              <form action={configureDataConnection} className="source-connect-form">
+                <input name="provider" type="hidden" value="fireblocks" />
+                <label htmlFor="fb-name">Connection name</label><input defaultValue="Fireblocks" id="fb-name" name="displayName" required />
+                <label htmlFor="fb-workspace">Workspace ID</label><input id="fb-workspace" name="workspaceId" required />
+                <label htmlFor="fb-url">API base URL</label><input defaultValue="https://api.fireblocks.io" id="fb-url" name="baseUrl" required type="url" />
+                <label htmlFor="fb-secret">API-identity reference</label><input id="fb-secret" name="secretReference" placeholder="vault://fireblocks/read-only-identity" required />
+                <p className="form-help">Reference a server-side vault entry containing the API key and private key. OrbitOS stores only the reference.</p>
+                <PendingSubmitButton className="primary-button" pendingLabel="Saving Fireblocks setup">Save secure setup</PendingSubmitButton>
+              </form>
+            </details>
+          </article>
+        </div>
+      </section>
 
       <section className="integration-grid">
         <form action={createIntegration} className="configuration-form">
@@ -69,13 +141,13 @@ export default async function IntegrationsPage({
 
         <section aria-labelledby="configured-integrations" className="integration-list">
           <div className="section-heading">
-            <p className="eyebrow">Tenant inventory</p>
+            <p className="eyebrow">Workspace inventory</p>
             <h2 id="configured-integrations">Configured integrations</h2>
           </div>
           {integrations === null ? (
             <div className="inline-alert" role="alert">
               <strong>Integration service unavailable</strong>
-              OrbitOS could not load the tenant integration inventory.
+              OrbitOS could not load the workspace integration inventory.
             </div>
           ) : integrations.length === 0 ? (
             <div className="empty-state">

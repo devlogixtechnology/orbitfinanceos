@@ -27,7 +27,7 @@ export default async function DomainsPage({
         <aside className="control-panel form-panel">
           <div className="section-heading"><p className="eyebrow">Connect route</p><h2>Add domain</h2></div>
           {canWrite ? <form action={createDomain} className="configuration-form embedded-form">
-            {isPlatform ? <><label htmlFor="domain-tenant">Tenant</label><select id="domain-tenant" name="tenantId" required><option value="">Select company</option>{snapshot?.tenants.map((tenant) => <option key={tenant.tenantId} value={tenant.tenantId}>{tenant.displayName}</option>)}</select></> : null}
+            {isPlatform ? <><label htmlFor="domain-tenant">Company</label><select id="domain-tenant" name="tenantId" required><option value="">Select company</option>{snapshot?.tenants.map((tenant) => <option key={tenant.tenantId} value={tenant.tenantId}>{tenant.displayName}</option>)}</select></> : null}
             <label htmlFor="domain-hostname">Hostname</label><input id="domain-hostname" name="hostname" placeholder="finance.customer.com" required />
             <label htmlFor="domain-kind">Route type</label><select defaultValue="custom" id="domain-kind" name="kind"><option value="custom">Customer-owned domain</option>{isPlatform ? <option value="platform_subdomain">OrbitOS subdomain</option> : null}</select>
             <p className="form-help">Custom domains start in pending DNS state. TLS activation must follow successful ownership verification.</p>

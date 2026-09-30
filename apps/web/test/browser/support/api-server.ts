@@ -122,6 +122,7 @@ const controlPlaneRepository: ControlPlaneRepository = {
   createSubscription: () => Promise.reject(new Error("Not used by the browser fixture")),
   createTenant: () => Promise.reject(new Error("Not used by the browser fixture")),
   createUser: () => Promise.reject(new Error("Not used by the browser fixture")),
+  provisionWorkspace: () => Promise.reject(new Error("Not used by the browser fixture")),
   snapshot: () => Promise.resolve({
     customers: [{
       createdAt: "2026-09-30T10:00:00.000Z",

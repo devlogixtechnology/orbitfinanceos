@@ -6,7 +6,7 @@ import {
   createDomainRequestSchema,
   createManagedUserRequestSchema,
   createRoleRequestSchema,
-  createTenantRequestSchema,
+  provisionWorkspaceRequestSchema,
   upsertBillingSubscriptionRequestSchema,
 } from "@orbitos/canonical-model";
 import { revalidatePath } from "next/cache";
@@ -36,13 +36,18 @@ async function postControlPlane(path: string, body: unknown, successPath: string
 }
 
 export async function createTenant(formData: FormData): Promise<never> {
-  const input = createTenantRequestSchema.safeParse({
+  const input = provisionWorkspaceRequestSchema.safeParse({
+    administrator: {
+      displayName: formData.get("administratorDisplayName"),
+      email: formData.get("administratorEmail"),
+      temporaryPassword: formData.get("temporaryPassword"),
+    },
     displayName: formData.get("displayName"),
     schemaVersion: "1",
     slug: formData.get("slug"),
   });
   if (!input.success) redirect("/app/platform?error=invalid");
-  return postControlPlane("/v1/control-plane/tenants", input.data, "/app/platform");
+  return postControlPlane("/v1/control-plane/workspaces", input.data, "/app/platform");
 }
 
 export async function createCustomer(formData: FormData): Promise<never> {

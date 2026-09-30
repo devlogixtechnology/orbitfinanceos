@@ -8,7 +8,7 @@ export default function AppError({
     <main className="page">
       <header className="page-header">
         <h1>Workspace unavailable</h1>
-        <p>The tenant workspace could not be loaded. No financial state was changed.</p>
+        <p>The company workspace could not be loaded. No financial state was changed.</p>
       </header>
       <div className="inline-alert" role="alert">
         <strong>Request failed</strong>

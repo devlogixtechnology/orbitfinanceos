@@ -38,7 +38,7 @@ export default async function OverviewPage() {
           <p className="eyebrow">Control center</p>
           <h1>Operational overview</h1>
           <p>
-            A live tenant snapshot from source configuration through evidence-backed reconciliation and exception resolution.
+            A live company snapshot from source configuration through evidence-backed reconciliation and exception resolution.
           </p>
         </header>
         <div className="control-posture">

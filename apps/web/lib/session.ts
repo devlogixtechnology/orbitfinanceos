@@ -2,6 +2,8 @@ import "server-only";
 
 import {
   integrationListSchema,
+  csvImportListSchema,
+  dataConnectionListSchema,
   controlPlaneSnapshotSchema,
   ingestionRunListSchema,
   movementListSchema,
@@ -13,6 +15,8 @@ import {
   verificationDecisionListSchema,
   exceptionWorkflowEventListSchema,
   type Integration,
+  type CsvImport,
+  type DataConnection,
   type ControlPlaneSnapshot,
   type IngestionRun,
   type CanonicalChainMovement,
@@ -23,6 +27,7 @@ import {
   type ExceptionWorkflowEvent,
 } from "@orbitos/canonical-model";
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 const apiBaseUrl = process.env.ORBITOS_API_BASE_URL ?? "http://127.0.0.1:3000";
 
@@ -54,7 +59,7 @@ export async function fetchAuthorizedApi(
   }
 }
 
-export async function loadAuthorizedSession(): Promise<SessionContext | null> {
+export const loadAuthorizedSession = cache(async (): Promise<SessionContext | null> => {
   const response = await fetchAuthorizedApi("/v1/session");
   if (response === null || !response.ok) {
     return null;
@@ -62,7 +67,7 @@ export async function loadAuthorizedSession(): Promise<SessionContext | null> {
 
   const parsed = sessionContextSchema.safeParse(await response.json());
   return parsed.success ? parsed.data : null;
-}
+});
 
 export async function loadControlPlane(): Promise<ControlPlaneSnapshot | null> {
   const response = await fetchAuthorizedApi("/v1/control-plane");
@@ -78,6 +83,20 @@ export async function loadIntegrations(): Promise<readonly Integration[] | null>
   }
 
   const parsed = integrationListSchema.safeParse(await response.json());
+  return parsed.success ? parsed.data.data : null;
+}
+
+export async function loadDataConnections(): Promise<readonly DataConnection[] | null> {
+  const response = await fetchAuthorizedApi("/v1/data-connections");
+  if (response === null || !response.ok) return null;
+  const parsed = dataConnectionListSchema.safeParse(await response.json());
+  return parsed.success ? parsed.data.data : null;
+}
+
+export async function loadCsvImports(): Promise<readonly CsvImport[] | null> {
+  const response = await fetchAuthorizedApi("/v1/csv-imports");
+  if (response === null || !response.ok) return null;
+  const parsed = csvImportListSchema.safeParse(await response.json());
   return parsed.success ? parsed.data.data : null;
 }
 

@@ -10,6 +10,7 @@ import {
   PostgresEvidenceCatalog,
   PostgresControlPlaneRepository,
   PostgresCustomAuthRepository,
+  PostgresDataConnectionRepository,
   PostgresIngestionRepository,
   PostgresIntegrationRepository,
   PostgresReconciliationQueryService,
@@ -44,6 +45,8 @@ const integrationRepository =
   database === undefined ? undefined : new PostgresIntegrationRepository(database);
 const controlPlaneRepository =
   database === undefined ? undefined : new PostgresControlPlaneRepository(database);
+const dataConnectionRepository =
+  database === undefined ? undefined : new PostgresDataConnectionRepository(database);
 const providerEndpoints: Readonly<Record<string, { chainId: "56" | "97"; url: string }>> = {
   "allnodes-publicnode-testnet": { chainId: "97", url: "https://bsc-testnet-rpc.publicnode.com" },
   "publicnode-mainnet": { chainId: "56", url: "https://bsc-rpc.publicnode.com" },
@@ -169,6 +172,7 @@ const server =
   database === undefined ||
   sessionService === undefined ||
   controlPlaneRepository === undefined ||
+  dataConnectionRepository === undefined ||
   integrationRepository === undefined ||
   ingestionService === undefined ||
   reconciliationService === undefined ||
@@ -178,6 +182,8 @@ const server =
     : buildServer({
         authenticator: sessionService,
         controlPlaneRepository,
+        dataConnectionRepository,
+        evidenceStore,
         ingestionService,
         integrationRepository,
         maximumIngestionBlockSpan,

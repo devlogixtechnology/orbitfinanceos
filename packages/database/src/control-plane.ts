@@ -18,6 +18,7 @@ import {
   type CreateTenantRequest,
   type Customer,
   type ManagedUser,
+  type ProvisionWorkspaceRequest,
   type Tenant,
   type TenantDomain,
   type AccessRole,
@@ -40,6 +41,11 @@ export interface CreateManagedUserCommand {
   readonly targetTenantId: string;
 }
 
+export interface ProvisionWorkspaceCommand {
+  readonly input: ProvisionWorkspaceRequest;
+  readonly passwordHash: string;
+}
+
 export interface ControlPlaneRepository {
   createCustomer(access: ControlPlaneAccess, input: CreateCustomerRequest, targetTenantId: string): Promise<Customer>;
   createDomain(access: ControlPlaneAccess, input: CreateDomainRequest, targetTenantId: string): Promise<TenantDomain>;
@@ -48,6 +54,7 @@ export interface ControlPlaneRepository {
   createSubscription(access: ControlPlaneAccess, input: UpsertBillingSubscriptionRequest, targetTenantId: string): Promise<BillingSubscription>;
   createTenant(access: ControlPlaneAccess, input: CreateTenantRequest): Promise<Tenant>;
   createUser(access: ControlPlaneAccess, command: CreateManagedUserCommand): Promise<ManagedUser>;
+  provisionWorkspace(access: ControlPlaneAccess, command: ProvisionWorkspaceCommand): Promise<Tenant>;
   snapshot(access: ControlPlaneAccess): Promise<ControlPlaneSnapshot>;
 }
 
@@ -269,6 +276,60 @@ export class PostgresControlPlaneRepository implements ControlPlaneRepository {
       } catch (error) {
         if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
           throw new ControlPlaneConflictError("A tenant with this slug already exists.");
+        }
+        throw error;
+      }
+    });
+  }
+
+  async provisionWorkspace(access: ControlPlaneAccess, command: ProvisionWorkspaceCommand): Promise<Tenant> {
+    if (!access.platformAccess) throw new Error("Platform access is required to provision a workspace.");
+    const tenantId = randomUUID();
+    const actorId = randomUUID();
+    const { administrator, ...workspace } = command.input;
+    return withControlPlaneTransaction(this.database, access, access.tenantId, async (transaction) => {
+      try {
+        const inserted = await sql<Record<string, unknown>>`
+          insert into orbit.tenants (id, display_name, slug)
+          values (${tenantId}::uuid, ${workspace.displayName}, ${workspace.slug})
+          returning id, display_name, slug, status, created_at
+        `.execute(transaction);
+        const tenant = mapTenant(requiredRow(inserted.rows));
+        await sql`
+          insert into orbit.tenant_domains (
+            tenant_id, id, hostname, kind, status, verification_token
+          ) values (
+            ${tenantId}::uuid, ${randomUUID()}::uuid,
+            ${`${workspace.slug}.orbitos.devlogix.com.pk`}, 'platform_subdomain',
+            'pending_dns', ${randomBytes(18).toString("base64url")}
+          )
+        `.execute(transaction);
+        await sql`select set_config('app.tenant_id', ${tenantId}, true)`.execute(transaction);
+        await sql`
+          insert into orbit.actors (tenant_id, id, external_subject, display_name)
+          values (${tenantId}::uuid, ${actorId}::uuid, ${`password:${administrator.email}`}, ${administrator.displayName})
+        `.execute(transaction);
+        await sql`
+          insert into orbit.memberships (tenant_id, actor_id, role)
+          values (${tenantId}::uuid, ${actorId}::uuid, 'tenant_admin')
+        `.execute(transaction);
+        await sql`
+          insert into orbit.auth_credentials (tenant_id, actor_id, email, password_hash)
+          values (${tenantId}::uuid, ${actorId}::uuid, ${administrator.email}, ${command.passwordHash})
+        `.execute(transaction);
+        await appendAuditEvent(transaction, access, tenantId, "tenant:created", "tenant", tenantId, tenant);
+        await appendAuditEvent(transaction, access, tenantId, "user:created", "actor", actorId, {
+          actorId,
+          displayName: administrator.displayName,
+          email: administrator.email,
+          enabled: true,
+          roles: ["tenant_admin"],
+          tenantId,
+        });
+        return tenant;
+      } catch (error) {
+        if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
+          throw new ControlPlaneConflictError("A company workspace with this slug or administrator already exists.");
         }
         throw error;
       }

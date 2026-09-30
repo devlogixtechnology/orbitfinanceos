@@ -36,6 +36,10 @@ const resellerControlPlaneMigrationUrl = new URL(
   "../migrations/0009_reseller_control_plane.sql",
   import.meta.url,
 );
+const dataConnectionsMigrationUrl = new URL(
+  "../migrations/0010_data_connections.sql",
+  import.meta.url,
+);
 
 describe("foundation migration contract", () => {
   it("declares fail-closed tenant policies and tenant-safe relationships", async () => {
@@ -145,5 +149,18 @@ describe("foundation migration contract", () => {
     expect(sql).toContain("amount_minor bigint");
     expect(sql).toContain("amount_due_minor bigint");
     expect(sql).toContain("OR orbit.current_platform_access()");
+  });
+
+  it("adds RLS-protected connection references and immutable CSV import metadata", async () => {
+    const sql = await readFile(fileURLToPath(dataConnectionsMigrationUrl), "utf8");
+
+    expect(sql.match(/FORCE ROW LEVEL SECURITY/gu)).toHaveLength(2);
+    expect(sql).toContain("CREATE TABLE orbit.data_connections");
+    expect(sql).toContain("CREATE TABLE orbit.csv_imports");
+    expect(sql).toContain("public_configuration jsonb");
+    expect(sql).toContain("secret_reference text");
+    expect(sql).toContain("UNIQUE (tenant_id, payload_sha256)");
+    expect(sql).toContain("csv_imports_append_only");
+    expect(sql).toContain("GRANT SELECT, INSERT ON orbit.csv_imports TO orbitos_app");
   });
 });
