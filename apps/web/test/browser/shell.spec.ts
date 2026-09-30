@@ -13,6 +13,7 @@ test("fails closed and redirects an unauthenticated operator", async ({ page }) 
   await expect(page).toHaveURL(/\/sign-in$/u);
   await expect(page.getByRole("heading", { name: "Sign in to OrbitOS" })).toBeVisible();
   await expect(page.getByLabel("Email address")).toHaveValue("orbitos@devlogix.com.pk");
+  await page.screenshot({ path: "test-results/sign-in.png", fullPage: true });
 });
 
 test.describe("authenticated tenant shell", () => {

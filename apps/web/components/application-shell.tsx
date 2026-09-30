@@ -1,9 +1,15 @@
 import type { SessionContext } from "@orbitos/canonical-model";
-import { ArrowsLeftRight, Gauge, PlugsConnected, Scales, WarningCircle } from "@phosphor-icons/react/dist/ssr";
+import { CheckCircle } from "@phosphor-icons/react/dist/ssr";
+import Image from "next/image";
 import Link from "next/link";
 
 import { signOut } from "../app/app/actions";
+import { PrimaryNavigation } from "./primary-navigation";
 import { ThemeSelector } from "./theme-selector";
+
+function displayActor(subject: string): string {
+  return subject.startsWith("password:") ? subject.slice("password:".length) : subject;
+}
 
 export function ApplicationShell({
   children,
@@ -18,33 +24,30 @@ export function ApplicationShell({
     <div className="app-shell">
       <aside className="sidebar">
         <Link className="brand" href="/app/overview">
-          <span aria-hidden="true" className="brand-mark">O</span>
-          <span>OrbitOS</span>
-          <span className="environment-label">MVP</span>
+          <span aria-label="OrbitOS" className="brand-logo-pair" role="img">
+            <Image
+              alt=""
+              aria-hidden="true"
+              className="brand-logo brand-logo-light"
+              height={64}
+              priority
+              src="/brand/orbitos-logo-horizontal-light.svg"
+              width={261}
+            />
+            <Image
+              alt=""
+              aria-hidden="true"
+              className="brand-logo brand-logo-dark"
+              height={64}
+              priority
+              src="/brand/orbitos-logo-horizontal-dark.svg"
+              width={261}
+            />
+          </span>
+          <span className="environment-label">Staging</span>
         </Link>
 
-        <nav aria-label="Primary" className="primary-nav">
-          <Link className="nav-link" href="/app/overview">
-            <Gauge aria-hidden="true" size={20} weight="regular" />
-            Overview
-          </Link>
-          <Link className="nav-link" href="/app/integrations">
-            <PlugsConnected aria-hidden="true" size={20} weight="regular" />
-            Integrations
-          </Link>
-          <Link className="nav-link" href="/app/movements">
-            <ArrowsLeftRight aria-hidden="true" size={20} weight="regular" />
-            Movements
-          </Link>
-          <Link className="nav-link" href="/app/reconciliation">
-            <Scales aria-hidden="true" size={20} weight="regular" />
-            Reconciliation
-          </Link>
-          <Link className="nav-link" href="/app/exceptions">
-            <WarningCircle aria-hidden="true" size={20} weight="regular" />
-            Exceptions
-          </Link>
-        </nav>
+        <PrimaryNavigation />
 
         <div className="sidebar-foot">
           <p className="tenant-name">{session.tenant.displayName}</p>
@@ -60,8 +63,16 @@ export function ApplicationShell({
 
       <div className="workspace">
         <header className="topbar">
-          <span className="topbar-context">Authorized tenant context</span>
-          <span className="topbar-actor">{session.actor.subject}</span>
+          <div className="topbar-context">
+            <span className="environment-dot" />
+            <span>Staging workspace</span>
+            <span aria-hidden="true" className="topbar-divider">/</span>
+            <strong>Tenant workspace</strong>
+          </div>
+          <div className="topbar-identity">
+            <CheckCircle aria-hidden="true" color="var(--color-success)" size={18} weight="fill" />
+            <span className="topbar-actor">{displayActor(session.actor.subject)}</span>
+          </div>
         </header>
         {children}
       </div>

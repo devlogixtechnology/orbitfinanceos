@@ -6,8 +6,33 @@ import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  applicationName: "OrbitOS",
   description: "Evidence-backed digital-asset operations",
-  title: "OrbitOS",
+  icons: {
+    apple: "/apple-touch-icon.png",
+    icon: [
+      { url: "/favicon.ico" },
+      { sizes: "16x16", type: "image/png", url: "/favicon-16x16.png" },
+      { sizes: "32x32", type: "image/png", url: "/favicon-32x32.png" },
+      { sizes: "48x48", type: "image/png", url: "/favicon-48x48.png" },
+      { type: "image/svg+xml", url: "/favicon.svg" },
+    ],
+  },
+  manifest: "/site.webmanifest",
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://orbitos.194-163-170-100.sslip.io",
+  ),
+  openGraph: {
+    description: "Evidence-backed digital-asset operations",
+    images: [{ alt: "OrbitOS", height: 630, url: "/og-image.png", width: 1200 }],
+    siteName: "OrbitOS",
+    title: "OrbitOS",
+    type: "website",
+  },
+  title: {
+    default: "OrbitOS",
+    template: "%s | OrbitOS",
+  },
 };
 
 export default async function RootLayout({
