@@ -43,7 +43,7 @@ const integrationRepository =
   database === undefined ? undefined : new PostgresIntegrationRepository(database);
 const providerEndpoints: Readonly<Record<string, { chainId: "56" | "97"; url: string }>> = {
   "allnodes-publicnode-testnet": { chainId: "97", url: "https://bsc-testnet-rpc.publicnode.com" },
-  "automata-1rpc-mainnet": { chainId: "56", url: "https://public.1rpc.io/bnb" },
+  "publicnode-mainnet": { chainId: "56", url: "https://bsc-rpc.publicnode.com" },
   "sentio-mainnet": { chainId: "56", url: "https://rpc.sentio.xyz/bsc" },
   "sentio-testnet": { chainId: "97", url: "https://rpc.sentio.xyz/bsc-testnet" },
 };

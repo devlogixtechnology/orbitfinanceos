@@ -14,7 +14,7 @@ import { fetchAuthorizedApi } from "../../../lib/session";
 const providerGroups = {
   "56": [
     { endpointReference: "https://rpc.sentio.xyz/bsc", groupId: "sentio-mainnet", independenceGroup: "sentio" },
-    { endpointReference: "https://public.1rpc.io/bnb", groupId: "automata-1rpc-mainnet", independenceGroup: "automata-1rpc" },
+    { endpointReference: "https://bsc-rpc.publicnode.com", groupId: "publicnode-mainnet", independenceGroup: "publicnode" },
   ],
   "97": [
     { endpointReference: "https://bsc-testnet-rpc.publicnode.com", groupId: "allnodes-publicnode-testnet", independenceGroup: "allnodes-publicnode" },
