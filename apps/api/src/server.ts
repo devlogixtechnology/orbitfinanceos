@@ -1,5 +1,6 @@
 import {
   denyAllAuthenticator,
+  hashPassword,
   hasPermission,
   readBearerToken,
   validateSessionContext,
@@ -8,7 +9,17 @@ import {
 } from "@orbitos/authz";
 import {
   apiErrorSchema,
+  accessRoleSchema,
+  billingInvoiceSchema,
+  billingSubscriptionSchema,
   canonicalChainMovementSchema,
+  controlPlaneSnapshotSchema,
+  createBillingInvoiceRequestSchema,
+  createCustomerRequestSchema,
+  createDomainRequestSchema,
+  createManagedUserRequestSchema,
+  createRoleRequestSchema,
+  createTenantRequestSchema,
   createPositionReconciliationRequestSchema,
   createIngestionRunRequestSchema,
   createdSessionSchema,
@@ -23,12 +34,22 @@ import {
   positionReconciliationListSchema,
   positionReconciliationSchema,
   signInRequestSchema,
+  tenantDomainSchema,
+  tenantSchema,
+  customerSchema,
+  managedUserSchema,
+  upsertBillingSubscriptionRequestSchema,
   updateOperationalExceptionRequestSchema,
   updateIntegrationRequestSchema,
   uuidSchema,
   verificationDecisionListSchema,
   type SessionContext,
 } from "@orbitos/canonical-model";
+import {
+  ControlPlaneConflictError,
+  type ControlPlaneAccess,
+  type ControlPlaneRepository,
+} from "@orbitos/database";
 import {
   IntegrationRepositoryUnavailableError,
   unavailableIntegrationRepository,
@@ -70,6 +91,7 @@ export interface BuildServerOptions {
     readonly windowMilliseconds: number;
   };
   readonly authenticator?: SessionAuthenticator;
+  readonly controlPlaneRepository?: ControlPlaneRepository;
   readonly ingestionService?: IngestionService;
   readonly integrationRepository?: IntegrationRepository;
   readonly reconciliationService?: ReconciliationQueryService;
@@ -276,12 +298,49 @@ function sendControlError(
   return sendError(reply, 500, "CONTROL_OPERATION_FAILED", "The control operation could not be completed.");
 }
 
+function controlPlaneAccess(session: SessionContext): ControlPlaneAccess {
+  return {
+    actorId: session.actor.actorId,
+    platformAccess: session.roles.includes("super_admin"),
+    tenantId: session.tenant.tenantId,
+  };
+}
+
+function resolveTargetTenant(
+  session: SessionContext,
+  requestedTenantId: string | undefined,
+): string | undefined {
+  if (requestedTenantId === undefined || requestedTenantId === session.tenant.tenantId) {
+    return session.tenant.tenantId;
+  }
+  return session.roles.includes("super_admin") ? requestedTenantId : undefined;
+}
+
+function sendControlPlaneError(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  error: unknown,
+): FastifyReply {
+  if (error instanceof ControlPlaneConflictError) {
+    return sendError(reply, 409, "CONTROL_PLANE_CONFLICT", error.message);
+  }
+  if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
+    return sendError(reply, 409, "CONTROL_PLANE_CONFLICT", "That control-plane record already exists.");
+  }
+  request.log.error(
+    { errorName: error instanceof Error ? error.name : "UnknownError" },
+    "Control-plane operation failed",
+  );
+  return sendError(reply, 500, "CONTROL_PLANE_FAILED", "The control-plane operation could not be completed.");
+}
+
 export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const apiRateLimit = options.apiRateLimit ?? {
     maximumRequests: 300,
     windowMilliseconds: 60_000,
   };
   const authenticator = options.authenticator ?? denyAllAuthenticator;
+  const controlPlaneRepository = options.controlPlaneRepository;
   const integrationRepository =
     options.integrationRepository ?? unavailableIntegrationRepository;
   const ingestionService = options.ingestionService ?? unavailableIngestionService;
@@ -479,6 +538,166 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   server.get("/v1/session", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
     return resolveSession(request, reply, authenticator);
+  });
+
+  server.get("/v1/control-plane", async (request, reply) => {
+    const session = await resolveSession(request, reply, authenticator);
+    if (session === undefined || !requirePermission(session, "tenants:read", reply)) return reply;
+    if (controlPlaneRepository === undefined) {
+      return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "Control-plane persistence is not configured.");
+    }
+    try {
+      return controlPlaneSnapshotSchema.parse(
+        await controlPlaneRepository.snapshot(controlPlaneAccess(session)),
+      );
+    } catch (error) {
+      return sendControlPlaneError(request, reply, error);
+    }
+  });
+
+  server.post("/v1/control-plane/tenants", async (request, reply) => {
+    const session = await resolveSession(request, reply, authenticator);
+    if (session === undefined || !requirePermission(session, "platform:tenants:write", reply)) return reply;
+    const input = createTenantRequestSchema.safeParse(request.body);
+    if (!input.success) return sendError(reply, 400, "INVALID_REQUEST", "The tenant configuration is invalid.");
+    if (controlPlaneRepository === undefined) return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "Control-plane persistence is not configured.");
+    try {
+      return reply.status(201).send(tenantSchema.parse(
+        await controlPlaneRepository.createTenant(controlPlaneAccess(session), input.data),
+      ));
+    } catch (error) {
+      return sendControlPlaneError(request, reply, error);
+    }
+  });
+
+  server.post("/v1/control-plane/customers", async (request, reply) => {
+    const session = await resolveSession(request, reply, authenticator);
+    if (session === undefined || !requirePermission(session, "customers:write", reply)) return reply;
+    const input = createCustomerRequestSchema.safeParse(request.body);
+    if (!input.success) return sendError(reply, 400, "INVALID_REQUEST", "The customer configuration is invalid.");
+    const targetTenantId = resolveTargetTenant(session, input.data.tenantId);
+    if (targetTenantId === undefined) return sendError(reply, 403, "PERMISSION_DENIED", "Cross-tenant administration requires platform access.");
+    if (controlPlaneRepository === undefined) return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "Control-plane persistence is not configured.");
+    try {
+      return reply.status(201).send(customerSchema.parse(
+        await controlPlaneRepository.createCustomer(controlPlaneAccess(session), input.data, targetTenantId),
+      ));
+    } catch (error) {
+      return sendControlPlaneError(request, reply, error);
+    }
+  });
+
+  server.post("/v1/control-plane/domains", async (request, reply) => {
+    const session = await resolveSession(request, reply, authenticator);
+    if (session === undefined || !requirePermission(session, "domains:write", reply)) return reply;
+    const input = createDomainRequestSchema.safeParse(request.body);
+    if (!input.success) return sendError(reply, 400, "INVALID_REQUEST", "The domain configuration is invalid.");
+    if (input.data.kind === "platform_subdomain" && !session.roles.includes("super_admin")) {
+      return sendError(reply, 403, "PERMISSION_DENIED", "Only platform administrators can allocate platform subdomains.");
+    }
+    const targetTenantId = resolveTargetTenant(session, input.data.tenantId);
+    if (targetTenantId === undefined) return sendError(reply, 403, "PERMISSION_DENIED", "Cross-tenant administration requires platform access.");
+    if (controlPlaneRepository === undefined) return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "Control-plane persistence is not configured.");
+    try {
+      return reply.status(201).send(tenantDomainSchema.parse(
+        await controlPlaneRepository.createDomain(controlPlaneAccess(session), input.data, targetTenantId),
+      ));
+    } catch (error) {
+      return sendControlPlaneError(request, reply, error);
+    }
+  });
+
+  server.post("/v1/control-plane/roles", async (request, reply) => {
+    const session = await resolveSession(request, reply, authenticator);
+    if (session === undefined || !requirePermission(session, "roles:write", reply)) return reply;
+    const input = createRoleRequestSchema.safeParse(request.body);
+    if (!input.success) return sendError(reply, 400, "INVALID_REQUEST", "The role configuration is invalid.");
+    if (!input.data.permissions.every((permission) => session.permissions.includes(permission))) {
+      return sendError(reply, 403, "PERMISSION_DENIED", "A role cannot grant permissions its creator does not hold.");
+    }
+    const targetTenantId = resolveTargetTenant(session, input.data.tenantId);
+    if (targetTenantId === undefined) return sendError(reply, 403, "PERMISSION_DENIED", "Cross-tenant administration requires platform access.");
+    if (controlPlaneRepository === undefined) return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "Control-plane persistence is not configured.");
+    try {
+      return reply.status(201).send(accessRoleSchema.parse(
+        await controlPlaneRepository.createRole(controlPlaneAccess(session), input.data, targetTenantId),
+      ));
+    } catch (error) {
+      return sendControlPlaneError(request, reply, error);
+    }
+  });
+
+  server.post("/v1/control-plane/users", async (request, reply) => {
+    const session = await resolveSession(request, reply, authenticator);
+    if (session === undefined || !requirePermission(session, "users:write", reply)) return reply;
+    const input = createManagedUserRequestSchema.safeParse(request.body);
+    if (!input.success) return sendError(reply, 400, "INVALID_REQUEST", "The user configuration is invalid.");
+    const isPlatformAdmin = session.roles.includes("super_admin");
+    const isTenantAdmin = isPlatformAdmin || session.roles.some((role) => role === "tenant_admin" || role === "administrator");
+    if ((input.data.systemRole === "super_admin" || input.data.systemRole === "tenant_admin") && !isPlatformAdmin) {
+      return sendError(reply, 403, "PERMISSION_DENIED", "Only platform administrators can assign platform or tenant administrator roles.");
+    }
+    if (!isTenantAdmin && input.data.systemRole !== "user") {
+      return sendError(reply, 403, "PERMISSION_DENIED", "Administrators can create users but cannot elevate administrators.");
+    }
+    if (!isTenantAdmin && input.data.customRoleIds.length > 0) {
+      return sendError(reply, 403, "PERMISSION_DENIED", "Custom role assignment requires tenant administrator access.");
+    }
+    const targetTenantId = resolveTargetTenant(session, input.data.tenantId);
+    if (targetTenantId === undefined) return sendError(reply, 403, "PERMISSION_DENIED", "Cross-tenant administration requires platform access.");
+    if (controlPlaneRepository === undefined) return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "Control-plane persistence is not configured.");
+    try {
+      const passwordHash = await hashPassword(input.data.temporaryPassword);
+      return reply.status(201).send(managedUserSchema.parse(
+        await controlPlaneRepository.createUser(controlPlaneAccess(session), {
+          input: input.data,
+          passwordHash,
+          targetTenantId,
+        }),
+      ));
+    } catch (error) {
+      return sendControlPlaneError(request, reply, error);
+    }
+  });
+
+  server.post("/v1/control-plane/subscriptions", async (request, reply) => {
+    const session = await resolveSession(request, reply, authenticator);
+    if (session === undefined || !requirePermission(session, "billing:write", reply)) return reply;
+    const input = upsertBillingSubscriptionRequestSchema.safeParse(request.body);
+    if (!input.success) return sendError(reply, 400, "INVALID_REQUEST", "The subscription configuration is invalid.");
+    if (input.data.billingKind === "platform_to_tenant" && !session.roles.includes("super_admin")) {
+      return sendError(reply, 403, "PERMISSION_DENIED", "Only platform administrators can manage tenant subscriptions.");
+    }
+    const targetTenantId = resolveTargetTenant(session, input.data.tenantId);
+    if (targetTenantId === undefined) return sendError(reply, 403, "PERMISSION_DENIED", "Cross-tenant administration requires platform access.");
+    if (controlPlaneRepository === undefined) return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "Control-plane persistence is not configured.");
+    try {
+      return reply.status(201).send(billingSubscriptionSchema.parse(
+        await controlPlaneRepository.createSubscription(controlPlaneAccess(session), input.data, targetTenantId),
+      ));
+    } catch (error) {
+      return sendControlPlaneError(request, reply, error);
+    }
+  });
+
+  server.post("/v1/control-plane/invoices", async (request, reply) => {
+    const session = await resolveSession(request, reply, authenticator);
+    if (session === undefined || !requirePermission(session, "billing:write", reply)) return reply;
+    const input = createBillingInvoiceRequestSchema.safeParse(request.body);
+    if (!input.success) return sendError(reply, 400, "INVALID_REQUEST", "The invoice configuration is invalid.");
+    if (input.data.billingKind === "platform_to_tenant" && !session.roles.includes("super_admin")) {
+      return sendError(reply, 403, "PERMISSION_DENIED", "Only platform administrators can issue tenant invoices.");
+    }
+    const targetTenantId = resolveTargetTenant(session, input.data.tenantId);
+    if (targetTenantId === undefined) return sendError(reply, 403, "PERMISSION_DENIED", "Cross-tenant administration requires platform access.");
+    if (controlPlaneRepository === undefined) return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "Control-plane persistence is not configured.");
+    try {
+      return reply.status(201).send(billingInvoiceSchema.parse(
+        await controlPlaneRepository.createInvoice(controlPlaneAccess(session), input.data, targetTenantId),
+      ));
+    } catch (error) {
+      return sendControlPlaneError(request, reply, error);
+    }
   });
 
   server.get("/v1/integrations", async (request, reply) => {

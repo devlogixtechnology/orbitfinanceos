@@ -56,6 +56,8 @@ import type { VerificationDecisionStore, VerificationPolicyStore } from "@orbito
 import { Pool, type PoolConfig } from "pg";
 import { createHash, randomBytes } from "node:crypto";
 
+export * from "./control-plane.js";
+
 export interface DatabaseSchema {
   readonly [tableName: string]: Record<string, unknown>;
 }
@@ -355,6 +357,7 @@ export class PostgresIntegrationRepository implements IntegrationRepository {
 interface CredentialRow {
   readonly actor_id: string;
   readonly email: string;
+  readonly explicit_permissions: readonly string[];
   readonly external_subject: string;
   readonly failed_authentication_count: number;
   readonly locked_until: Date | null;
@@ -368,6 +371,7 @@ function toStoredCredential(row: CredentialRow): StoredCredential {
   return {
     actorId: row.actor_id,
     email: row.email,
+    explicitPermissions: row.explicit_permissions,
     failedAuthenticationCount: row.failed_authentication_count,
     lockedUntil: row.locked_until,
     passwordHash: row.password_hash,
@@ -434,21 +438,37 @@ export class PostgresCustomAuthRepository implements CustomAuthRepository {
       async (transaction) => {
         const identity = await sql<{
           external_subject: string;
+          explicit_permissions: readonly string[];
           roles: readonly string[];
           tenant_display_name: string;
         }>`
           select
             actors.external_subject,
             tenants.display_name as tenant_display_name,
-            array_agg(memberships.role order by memberships.role) as roles
+            array(
+              select role_name from (
+                select memberships.role as role_name
+                from orbit.memberships as memberships
+                where memberships.tenant_id = actors.tenant_id and memberships.actor_id = actors.id
+                union
+                select custom_roles.name as role_name
+                from orbit.custom_role_assignments as assignments
+                join orbit.custom_roles on custom_roles.tenant_id = assignments.tenant_id and custom_roles.id = assignments.role_id
+                where assignments.tenant_id = actors.tenant_id and assignments.actor_id = actors.id
+              ) as assigned_roles order by role_name
+            ) as roles,
+            array(
+              select distinct permissions.permission
+              from orbit.custom_role_assignments as assignments
+              join orbit.custom_role_permissions as permissions
+                on permissions.tenant_id = assignments.tenant_id and permissions.role_id = assignments.role_id
+              where assignments.tenant_id = actors.tenant_id and assignments.actor_id = actors.id
+              order by permissions.permission
+            ) as explicit_permissions
           from orbit.actors as actors
           join orbit.tenants as tenants on tenants.id = actors.tenant_id
-          join orbit.memberships as memberships
-            on memberships.tenant_id = actors.tenant_id
-            and memberships.actor_id = actors.id
           where actors.tenant_id = ${credential.tenant_id}::uuid
             and actors.id = ${credential.actor_id}::uuid
-          group by actors.external_subject, tenants.display_name
         `.execute(transaction);
         const row = identity.rows[0];
         return row === undefined
@@ -501,25 +521,41 @@ export class PostgresCustomAuthRepository implements CustomAuthRepository {
       async (transaction) => {
         const identity = await sql<{
           external_subject: string;
+          explicit_permissions: readonly string[];
           roles: readonly string[];
           tenant_display_name: string;
         }>`
           select
             actors.external_subject,
             tenants.display_name as tenant_display_name,
-            array_agg(memberships.role order by memberships.role) as roles
+            array(
+              select role_name from (
+                select memberships.role as role_name
+                from orbit.memberships as memberships
+                where memberships.tenant_id = actors.tenant_id and memberships.actor_id = actors.id
+                union
+                select custom_roles.name as role_name
+                from orbit.custom_role_assignments as assignments
+                join orbit.custom_roles on custom_roles.tenant_id = assignments.tenant_id and custom_roles.id = assignments.role_id
+                where assignments.tenant_id = actors.tenant_id and assignments.actor_id = actors.id
+              ) as assigned_roles order by role_name
+            ) as roles,
+            array(
+              select distinct permissions.permission
+              from orbit.custom_role_assignments as assignments
+              join orbit.custom_role_permissions as permissions
+                on permissions.tenant_id = assignments.tenant_id and permissions.role_id = assignments.role_id
+              where assignments.tenant_id = actors.tenant_id and assignments.actor_id = actors.id
+              order by permissions.permission
+            ) as explicit_permissions
           from orbit.actors as actors
           join orbit.tenants as tenants on tenants.id = actors.tenant_id
-          join orbit.memberships as memberships
-            on memberships.tenant_id = actors.tenant_id
-            and memberships.actor_id = actors.id
           join orbit.auth_credentials as credentials
             on credentials.tenant_id = actors.tenant_id
             and credentials.actor_id = actors.id
           where actors.tenant_id = ${session.tenant_id}::uuid
             and actors.id = ${session.actor_id}::uuid
             and credentials.enabled = true
-          group by actors.external_subject, tenants.display_name
         `.execute(transaction);
         const row = identity.rows[0];
         if (row === undefined) {
@@ -532,7 +568,7 @@ export class PostgresCustomAuthRepository implements CustomAuthRepository {
           },
           authenticatedAt: session.created_at.toISOString(),
           expiresAt: session.expires_at.toISOString(),
-          permissions: permissionsForRoles(row.roles),
+          permissions: permissionsForRoles(row.roles, row.explicit_permissions),
           roles: row.roles,
           schemaVersion: "1",
           tenant: {

@@ -112,6 +112,7 @@ export interface StoredCredential {
   readonly failedAuthenticationCount: number;
   readonly lockedUntil: Date | null;
   readonly passwordHash: string;
+  readonly explicitPermissions?: readonly string[];
   readonly roles: readonly string[];
   readonly subject: string;
   readonly tenantDisplayName: string;
@@ -255,29 +256,72 @@ export class PasswordSessionService
   }
 }
 
-export function permissionsForRoles(roles: readonly string[]): readonly string[] {
-  const permissions = new Set<string>();
+const operationalReadPermissions = [
+  "integrations:read",
+  "evidence:read",
+  "ingestion:read",
+  "movements:read",
+  "verification:read",
+  "reconciliation:read",
+  "exceptions:read",
+] as const;
+
+const operationalWritePermissions = [
+  "integrations:write",
+  "ingestion:write",
+  "reconciliation:write",
+  "exceptions:write",
+] as const;
+
+const tenantAdministrationPermissions = [
+  "tenants:read",
+  "customers:read",
+  "customers:write",
+  "users:read",
+  "users:write",
+  "roles:read",
+  "roles:write",
+  "domains:read",
+  "domains:write",
+  "billing:read",
+  "billing:write",
+] as const;
+
+export const permissionCatalog = [
+  "platform:tenants:read",
+  "platform:tenants:write",
+  ...tenantAdministrationPermissions,
+  ...operationalReadPermissions,
+  ...operationalWritePermissions,
+] as const;
+
+export function permissionsForRoles(
+  roles: readonly string[],
+  explicitPermissions: readonly string[] = [],
+): readonly string[] {
+  const permissions = new Set<string>(explicitPermissions);
   for (const role of roles) {
-    if (role === "administrator") {
-      permissions.add("integrations:read");
-      permissions.add("integrations:write");
-      permissions.add("evidence:read");
-      permissions.add("ingestion:read");
-      permissions.add("ingestion:write");
-      permissions.add("movements:read");
-      permissions.add("verification:read");
-      permissions.add("reconciliation:read");
-      permissions.add("reconciliation:write");
-      permissions.add("exceptions:read");
-      permissions.add("exceptions:write");
-    } else if (role === "read_only_operator") {
-      permissions.add("integrations:read");
-      permissions.add("evidence:read");
-      permissions.add("ingestion:read");
-      permissions.add("movements:read");
-      permissions.add("verification:read");
-      permissions.add("reconciliation:read");
-      permissions.add("exceptions:read");
+    if (role === "super_admin") {
+      for (const permission of permissionCatalog) permissions.add(permission);
+    } else if (role === "tenant_admin" || role === "administrator") {
+      for (const permission of tenantAdministrationPermissions) permissions.add(permission);
+      for (const permission of operationalReadPermissions) permissions.add(permission);
+      for (const permission of operationalWritePermissions) permissions.add(permission);
+    } else if (role === "admin") {
+      for (const permission of [
+        "tenants:read",
+        "customers:read",
+        "customers:write",
+        "users:read",
+        "users:write",
+        "roles:read",
+        "domains:read",
+        "billing:read",
+        ...operationalReadPermissions,
+        ...operationalWritePermissions,
+      ]) permissions.add(permission);
+    } else if (role === "user" || role === "read_only_operator") {
+      for (const permission of operationalReadPermissions) permissions.add(permission);
     }
   }
   return [...permissions].sort();
@@ -333,7 +377,10 @@ export class InMemoryCustomAuthRepository implements CustomAuthRepository {
         },
         authenticatedAt: session.createdAt.toISOString(),
         expiresAt: session.expiresAt.toISOString(),
-        permissions: permissionsForRoles(credential.roles),
+        permissions: permissionsForRoles(
+          credential.roles,
+          credential.explicitPermissions,
+        ),
         roles: credential.roles,
         schemaVersion: "1",
         tenant: {

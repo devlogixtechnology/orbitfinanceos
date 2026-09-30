@@ -32,6 +32,10 @@ const sprintThreeReconciliationMigrationUrl = new URL(
   "../migrations/0008_sprint3_reconciliation.sql",
   import.meta.url,
 );
+const resellerControlPlaneMigrationUrl = new URL(
+  "../migrations/0009_reseller_control_plane.sql",
+  import.meta.url,
+);
 
 describe("foundation migration contract", () => {
   it("declares fail-closed tenant policies and tenant-safe relationships", async () => {
@@ -124,5 +128,22 @@ describe("foundation migration contract", () => {
     expect(sql).toContain("reconciliation_results_append_only");
     expect(sql).toContain("UNIQUE (tenant_id, stable_key)");
     expect(sql).toContain("SET search_path = pg_catalog");
+  });
+
+  it("adds the RLS-protected reseller hierarchy, domains, roles, and two-sided billing", async () => {
+    const sql = await readFile(fileURLToPath(resellerControlPlaneMigrationUrl), "utf8");
+
+    expect(sql.match(/FORCE ROW LEVEL SECURITY/gu)).toHaveLength(7);
+    expect(sql).toContain("CREATE FUNCTION orbit.current_platform_access()");
+    expect(sql).toContain("CREATE TABLE orbit.customers");
+    expect(sql).toContain("CREATE TABLE orbit.tenant_domains");
+    expect(sql).toContain("CREATE TABLE orbit.custom_roles");
+    expect(sql).toContain("CREATE TABLE orbit.custom_role_permissions");
+    expect(sql).toContain("CREATE TABLE orbit.custom_role_assignments");
+    expect(sql).toContain("CREATE TABLE orbit.billing_subscriptions");
+    expect(sql).toContain("CREATE TABLE orbit.billing_invoices");
+    expect(sql).toContain("amount_minor bigint");
+    expect(sql).toContain("amount_due_minor bigint");
+    expect(sql).toContain("OR orbit.current_platform_access()");
   });
 });

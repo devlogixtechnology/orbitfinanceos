@@ -314,7 +314,7 @@ export class SupabaseStorageEvidenceStore implements DurableEvidenceStore {
 
   private async putImmutable(name: string, bytes: Uint8Array, contentType: string): Promise<void> {
     const response = await this.fetchImplementation(this.objectUrl(name), {
-      body: bytes,
+      body: Uint8Array.from(bytes),
       headers: { ...this.headers(contentType), "x-upsert": "false" },
       method: "POST",
     });

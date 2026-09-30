@@ -15,6 +15,7 @@ const credentials = signInRequestSchema.parse({
 });
 const tenantDisplayName =
   process.env.ORBITOS_BOOTSTRAP_TENANT_NAME ?? "Devlogix OrbitOS Staging";
+const tenantSlug = process.env.ORBITOS_BOOTSTRAP_TENANT_SLUG ?? "devlogix-orbitos";
 const passwordHash = await hashPassword(credentials.password);
 const client = new Client({ connectionString });
 await client.connect();
@@ -30,21 +31,26 @@ try {
 
   await client.query("select set_config('app.tenant_id', $1, true)", [tenantId]);
   await client.query(
-    `insert into orbit.tenants (id, display_name)
-     values ($1, $2)
-     on conflict (id) do update set display_name = excluded.display_name`,
-    [tenantId, tenantDisplayName],
+    `insert into orbit.tenants (id, display_name, slug)
+     values ($1, $2, $3)
+     on conflict (id) do update set display_name = excluded.display_name, slug = excluded.slug`,
+    [tenantId, tenantDisplayName, tenantSlug],
   );
   await client.query(
-    `insert into orbit.actors (tenant_id, id, external_subject)
-     values ($1, $2, $3)
+    `insert into orbit.actors (tenant_id, id, external_subject, display_name)
+     values ($1, $2, $3, $4)
      on conflict (tenant_id, id) do update
-       set external_subject = excluded.external_subject`,
-    [tenantId, actorId, `password:${credentials.email}`],
+       set external_subject = excluded.external_subject, display_name = excluded.display_name`,
+    [tenantId, actorId, `password:${credentials.email}`, "OrbitOS Super Administrator"],
+  );
+  await client.query(
+    `delete from orbit.memberships
+     where tenant_id = $1 and actor_id = $2 and role = 'administrator'`,
+    [tenantId, actorId],
   );
   await client.query(
     `insert into orbit.memberships (tenant_id, actor_id, role)
-     values ($1, $2, 'administrator')
+     values ($1, $2, 'super_admin')
      on conflict do nothing`,
     [tenantId, actorId],
   );
@@ -73,7 +79,7 @@ try {
     [tenantId],
   );
   await client.query("commit");
-  process.stdout.write(`staging administrator ready: ${credentials.email}\n`);
+  process.stdout.write(`staging super administrator ready: ${credentials.email}\n`);
 } catch (error) {
   await client.query("rollback");
   throw error;

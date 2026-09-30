@@ -6,6 +6,7 @@ import {
 import { InMemoryIntegrationRepository } from "@orbitos/integration-core";
 import { InMemoryIngestionRepository, type IngestionService } from "@orbitos/ingestion-core";
 import { InMemoryReconciliationQueryService } from "@orbitos/reconciliation-core";
+import type { ControlPlaneRepository } from "@orbitos/database";
 
 import { buildServer } from "../../../../api/src/server.js";
 
@@ -17,7 +18,7 @@ const authRepository = new InMemoryCustomAuthRepository([
     failedAuthenticationCount: 0,
     lockedUntil: null,
     passwordHash,
-    roles: ["administrator"],
+    roles: ["super_admin"],
     subject: "password:orbitos@devlogix.com.pk",
     tenantDisplayName: "Devlogix OrbitOS Staging",
     tenantId: "22222222-2222-4222-8222-222222222222",
@@ -113,8 +114,58 @@ const reconciliationService = new InMemoryReconciliationQueryService({
   }],
 });
 
+const controlPlaneRepository: ControlPlaneRepository = {
+  createCustomer: () => Promise.reject(new Error("Not used by the browser fixture")),
+  createDomain: () => Promise.reject(new Error("Not used by the browser fixture")),
+  createInvoice: () => Promise.reject(new Error("Not used by the browser fixture")),
+  createRole: () => Promise.reject(new Error("Not used by the browser fixture")),
+  createSubscription: () => Promise.reject(new Error("Not used by the browser fixture")),
+  createTenant: () => Promise.reject(new Error("Not used by the browser fixture")),
+  createUser: () => Promise.reject(new Error("Not used by the browser fixture")),
+  snapshot: () => Promise.resolve({
+    customers: [{
+      createdAt: "2026-09-30T10:00:00.000Z",
+      customerId: "44444444-4444-4444-8444-444444444444",
+      displayName: "Northstar Trading",
+      externalReference: "CUS-001",
+      status: "active",
+      tenantId,
+    }],
+    domains: [{
+      createdAt: "2026-09-30T10:00:00.000Z",
+      domainId: "55555555-5555-4555-8555-555555555555",
+      hostname: "devlogix-orbitos.orbitos.devlogix.com.pk",
+      kind: "platform_subdomain",
+      status: "pending_dns",
+      tenantId,
+      verificationToken: "fixture-verification-token-2026",
+    }],
+    invoices: [],
+    roles: [],
+    schemaVersion: "1",
+    subscriptions: [],
+    tenants: [{
+      createdAt: "2026-09-29T10:00:00.000Z",
+      displayName: "Devlogix OrbitOS Staging",
+      slug: "devlogix-orbitos",
+      status: "active",
+      tenantId,
+    }],
+    users: [{
+      actorId: "11111111-1111-4111-8111-111111111111",
+      createdAt: "2026-09-29T10:00:00.000Z",
+      displayName: "OrbitOS Super Administrator",
+      email: "orbitos@devlogix.com.pk",
+      enabled: true,
+      roles: ["super_admin"],
+      tenantId,
+    }],
+  }),
+};
+
 const server = buildServer({
   authenticator: sessionService,
+  controlPlaneRepository,
   ingestionService: browserIngestionService,
   integrationRepository: new InMemoryIntegrationRepository(),
   reconciliationService,

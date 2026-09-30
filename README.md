@@ -12,6 +12,9 @@ This public repository currently contains an early engineering foundation:
   sessions, lockout controls, and server-derived tenant context;
 - a server-rendered Next.js application shell with tenant identity, dual themes,
   delivered-route navigation, and controlled loading/error/empty states;
+- a reseller control plane for platform-owned tenant provisioning, tenant-owned
+  customer workspaces, custom domains, governed user/role creation, and separate
+  platform-to-tenant and tenant-to-customer billing records;
 - a BSC JSON-RPC evidence-boundary client with chain-identity checks, bounded
   retry/timeout behavior, rate-limit backoff, validated independent-provider
   fallback, durable raw-response evidence, golden fixtures, and a repeatable
@@ -36,8 +39,8 @@ This public repository currently contains an early engineering foundation:
   reconciliation, and exception migrations with executable embedded-PostgreSQL
   row-level-security and replay tests.
 
-It is not a production accounting system and has no live integrations,
-deployment, or custody capabilities.
+It is not a production accounting system and has no custody or payment-processing
+capabilities.
 
 ## Development
 
@@ -66,7 +69,7 @@ $env:ORBITOS_BOOTSTRAP_PASSWORD = "<a unique password of at least 12 characters>
 pnpm auth:bootstrap-staging
 ```
 
-The bootstrap is repeatable. It creates or rotates the administrator credential
+The bootstrap is repeatable. It creates or rotates the platform Super Admin credential
 for `orbitos@devlogix.com.pk` without writing the password to the repository or
 printing it. Remove the password environment variable after the command. The
 database connection used for migrations must be permitted to create the `orbit`
@@ -95,7 +98,7 @@ pnpm --filter @orbitos/api dev
 The API exposes process liveness at `GET /health`, dependency readiness at
 `GET /ready`, tenant-safe Prometheus metrics at `GET /metrics`, and an
 authenticated `GET /v1/session` contract plus tenant-scoped
-integration, bounded-run, and exact movement contracts. The default
+integration, bounded-run, exact movement, and reseller control-plane contracts. The default
 authenticator denies every credential. Setting `DATABASE_URL` activates the
 first-party session service, PostgreSQL integration/ingestion/verification/
 reconciliation repositories, and append-only audit/evidence catalog. Completed
@@ -118,11 +121,15 @@ authenticated evidence, verification, reconciliation, and exception workflow is
 documented in the [back-end development plan](docs/backend/IMPLEMENTATION_PLAN.md).
 The live-provider requirements and latest public-endpoint probe results are recorded in
 the [BSC capability matrix](docs/backend/BSC_CAPABILITY_MATRIX.md).
+The reseller hierarchy, exact role matrix, permission keys, domain boundary, and
+two-sided billing model are documented in the
+[reseller control-plane guide](docs/backend/reseller-control-plane.md).
 
 ## Front-end planning
 
 The authenticated application now includes Overview, Integrations, Movements,
-Reconciliation, and Exceptions. Its design language, remaining implementation sequence, and
+Reconciliation, Exceptions, Tenants, Customers, Users & Roles, Domains, and Billing.
+Its design language, remaining implementation sequence, and
 MVP route map are documented in:
 
 - [DESIGN.md](DESIGN.md)

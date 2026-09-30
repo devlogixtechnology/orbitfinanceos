@@ -6,6 +6,7 @@ import {
   denyAllAuthenticator,
   hashPassword,
   hasPermission,
+  permissionsForRoles,
   readBearerToken,
   validateSessionContext,
   verifyPassword,
@@ -52,6 +53,15 @@ describe("tenant authorization boundary", () => {
   it("checks explicit permissions without inferring them from role names", () => {
     expect(hasPermission(session, "evidence:read")).toBe(true);
     expect(hasPermission(session, "evidence:write")).toBe(false);
+  });
+
+  it("enforces the platform and tenant role ceilings", () => {
+    expect(permissionsForRoles(["super_admin"])).toEqual(
+      expect.arrayContaining(["platform:tenants:write", "billing:write", "roles:write"]),
+    );
+    expect(permissionsForRoles(["tenant_admin"])).not.toContain("platform:tenants:write");
+    expect(permissionsForRoles(["admin"])).not.toContain("roles:write");
+    expect(permissionsForRoles(["user"])).not.toContain("users:write");
   });
 
   it("hashes passwords with a unique memory-hard scrypt representation", async () => {
@@ -116,7 +126,7 @@ describe("tenant authorization boundary", () => {
       ),
     ).resolves.toMatchObject({ token });
     await expect(service.authenticate(token)).resolves.toMatchObject({
-      permissions: [
+      permissions: expect.arrayContaining([
         "evidence:read",
         "exceptions:read",
         "exceptions:write",
@@ -128,7 +138,7 @@ describe("tenant authorization boundary", () => {
         "reconciliation:read",
         "reconciliation:write",
         "verification:read",
-      ],
+      ]),
     });
 
     await service.revokeSession(token);

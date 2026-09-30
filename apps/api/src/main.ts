@@ -8,6 +8,7 @@ import {
 } from "@orbitos/connector-bsc";
 import {
   PostgresEvidenceCatalog,
+  PostgresControlPlaneRepository,
   PostgresCustomAuthRepository,
   PostgresIngestionRepository,
   PostgresIntegrationRepository,
@@ -41,6 +42,8 @@ const sessionService =
     : new PasswordSessionService(new PostgresCustomAuthRepository(database));
 const integrationRepository =
   database === undefined ? undefined : new PostgresIntegrationRepository(database);
+const controlPlaneRepository =
+  database === undefined ? undefined : new PostgresControlPlaneRepository(database);
 const providerEndpoints: Readonly<Record<string, { chainId: "56" | "97"; url: string }>> = {
   "allnodes-publicnode-testnet": { chainId: "97", url: "https://bsc-testnet-rpc.publicnode.com" },
   "publicnode-mainnet": { chainId: "56", url: "https://bsc-rpc.publicnode.com" },
@@ -165,6 +168,7 @@ async function checkProviderReadiness(): Promise<"degraded" | "ok"> {
 const server =
   database === undefined ||
   sessionService === undefined ||
+  controlPlaneRepository === undefined ||
   integrationRepository === undefined ||
   ingestionService === undefined ||
   reconciliationService === undefined ||
@@ -173,6 +177,7 @@ const server =
     ? buildServer()
     : buildServer({
         authenticator: sessionService,
+        controlPlaneRepository,
         ingestionService,
         integrationRepository,
         maximumIngestionBlockSpan,

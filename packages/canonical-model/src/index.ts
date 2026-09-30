@@ -484,6 +484,197 @@ export const createdSessionSchema = z
   })
   .strict();
 
+export const systemRoleSchema = z.enum([
+  "super_admin",
+  "tenant_admin",
+  "admin",
+  "user",
+  "administrator",
+  "read_only_operator",
+]);
+
+export const tenantLifecycleSchema = z.enum(["active", "suspended"]);
+export const tenantSchema = z
+  .object({
+    createdAt: utcInstantSchema,
+    displayName: z.string().min(2).max(120),
+    slug: z.string().regex(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u),
+    status: tenantLifecycleSchema,
+    tenantId: uuidSchema,
+  })
+  .strict();
+
+export const customerSchema = z
+  .object({
+    createdAt: utcInstantSchema,
+    customerId: uuidSchema,
+    displayName: z.string().min(2).max(120),
+    externalReference: z.string().min(1).max(120),
+    status: tenantLifecycleSchema,
+    tenantId: uuidSchema,
+  })
+  .strict();
+
+export const tenantDomainSchema = z
+  .object({
+    createdAt: utcInstantSchema,
+    domainId: uuidSchema,
+    hostname: z.string().min(3).max(253),
+    kind: z.enum(["platform_subdomain", "custom"]),
+    status: z.enum(["pending_dns", "verified", "active", "failed"]),
+    tenantId: uuidSchema,
+    verificationToken: z.string().min(16),
+  })
+  .strict();
+
+export const accessRoleSchema = z
+  .object({
+    createdAt: utcInstantSchema,
+    description: z.string().max(500),
+    managed: z.boolean(),
+    name: z.string().min(2).max(80),
+    permissions: z.array(authorizationValueSchema),
+    roleId: uuidSchema,
+    systemKey: systemRoleSchema.optional(),
+    tenantId: uuidSchema,
+  })
+  .strict();
+
+export const managedUserSchema = z
+  .object({
+    actorId: uuidSchema,
+    createdAt: utcInstantSchema,
+    displayName: z.string().min(2).max(120),
+    email: z.email(),
+    enabled: z.boolean(),
+    roles: z.array(z.string().min(1)),
+    tenantId: uuidSchema,
+  })
+  .strict();
+
+export const billingSubscriptionSchema = z
+  .object({
+    amountMinor: unsignedIntegerStringSchema,
+    billingKind: z.enum(["platform_to_tenant", "tenant_to_customer"]),
+    createdAt: utcInstantSchema,
+    currency: z.string().regex(/^[A-Z]{3}$/u),
+    customerId: uuidSchema.optional(),
+    interval: z.enum(["monthly", "annual"]),
+    nextBillingAt: utcInstantSchema.optional(),
+    planCode: z.string().regex(/^[a-z0-9][a-z0-9_-]{1,63}$/u),
+    planName: z.string().min(2).max(120),
+    status: z.enum(["trialing", "active", "past_due", "paused", "cancelled"]),
+    subscriptionId: uuidSchema,
+    tenantId: uuidSchema,
+  })
+  .strict();
+
+export const billingInvoiceSchema = z
+  .object({
+    amountDueMinor: unsignedIntegerStringSchema,
+    amountPaidMinor: unsignedIntegerStringSchema,
+    billingKind: z.enum(["platform_to_tenant", "tenant_to_customer"]),
+    createdAt: utcInstantSchema,
+    currency: z.string().regex(/^[A-Z]{3}$/u),
+    customerId: uuidSchema.optional(),
+    dueAt: utcInstantSchema,
+    invoiceId: uuidSchema,
+    invoiceNumber: z.string().min(2).max(80),
+    status: z.enum(["draft", "open", "paid", "void", "uncollectible"]),
+    tenantId: uuidSchema,
+  })
+  .strict();
+
+export const controlPlaneSnapshotSchema = z
+  .object({
+    customers: z.array(customerSchema),
+    domains: z.array(tenantDomainSchema),
+    invoices: z.array(billingInvoiceSchema),
+    roles: z.array(accessRoleSchema),
+    schemaVersion: z.literal("1"),
+    subscriptions: z.array(billingSubscriptionSchema),
+    tenants: z.array(tenantSchema),
+    users: z.array(managedUserSchema),
+  })
+  .strict();
+
+const optionalTargetTenantSchema = z.object({ tenantId: uuidSchema.optional() });
+
+export const createTenantRequestSchema = z
+  .object({
+    displayName: z.string().trim().min(2).max(120),
+    schemaVersion: z.literal("1"),
+    slug: z.string().trim().toLowerCase().regex(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u),
+  })
+  .strict();
+
+export const createCustomerRequestSchema = optionalTargetTenantSchema
+  .extend({
+    displayName: z.string().trim().min(2).max(120),
+    externalReference: z.string().trim().min(1).max(120),
+    schemaVersion: z.literal("1"),
+  })
+  .strict();
+
+export const createDomainRequestSchema = optionalTargetTenantSchema
+  .extend({
+    hostname: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u),
+    kind: z.enum(["platform_subdomain", "custom"]),
+    schemaVersion: z.literal("1"),
+  })
+  .strict();
+
+export const createRoleRequestSchema = optionalTargetTenantSchema
+  .extend({
+    description: z.string().trim().max(500),
+    name: z.string().trim().min(2).max(80),
+    permissions: z.array(authorizationValueSchema).min(1).max(64),
+    schemaVersion: z.literal("1"),
+  })
+  .strict();
+
+export const createManagedUserRequestSchema = optionalTargetTenantSchema
+  .extend({
+    customRoleIds: z.array(uuidSchema).max(16).default([]),
+    displayName: z.string().trim().min(2).max(120),
+    email: z.string().trim().toLowerCase().pipe(z.email()),
+    schemaVersion: z.literal("1"),
+    systemRole: z.enum(["super_admin", "tenant_admin", "admin", "user"]),
+    temporaryPassword: z.string().min(12).max(128),
+  })
+  .strict();
+
+export const upsertBillingSubscriptionRequestSchema = optionalTargetTenantSchema
+  .extend({
+    amountMinor: unsignedIntegerStringSchema,
+    billingKind: z.enum(["platform_to_tenant", "tenant_to_customer"]),
+    currency: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/u),
+    customerId: uuidSchema.optional(),
+    interval: z.enum(["monthly", "annual"]),
+    nextBillingAt: utcInstantSchema.optional(),
+    planCode: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9_-]{1,63}$/u),
+    planName: z.string().trim().min(2).max(120),
+    schemaVersion: z.literal("1"),
+    status: z.enum(["trialing", "active", "past_due", "paused", "cancelled"]),
+  })
+  .strict();
+
+export const createBillingInvoiceRequestSchema = optionalTargetTenantSchema
+  .extend({
+    amountDueMinor: unsignedIntegerStringSchema,
+    billingKind: z.enum(["platform_to_tenant", "tenant_to_customer"]),
+    currency: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/u),
+    customerId: uuidSchema.optional(),
+    dueAt: utcInstantSchema,
+    invoiceNumber: z.string().trim().min(2).max(80),
+    schemaVersion: z.literal("1"),
+  })
+  .strict();
+
 const evmAnchorSchema = z
   .object({
     blockHash: z.string().min(1),
@@ -592,6 +783,22 @@ export type ApiError = z.infer<typeof apiErrorSchema>;
 export type SessionContext = z.infer<typeof sessionContextSchema>;
 export type SignInRequest = z.infer<typeof signInRequestSchema>;
 export type CreatedSession = z.infer<typeof createdSessionSchema>;
+export type SystemRole = z.infer<typeof systemRoleSchema>;
+export type Tenant = z.infer<typeof tenantSchema>;
+export type Customer = z.infer<typeof customerSchema>;
+export type TenantDomain = z.infer<typeof tenantDomainSchema>;
+export type AccessRole = z.infer<typeof accessRoleSchema>;
+export type ManagedUser = z.infer<typeof managedUserSchema>;
+export type BillingSubscription = z.infer<typeof billingSubscriptionSchema>;
+export type BillingInvoice = z.infer<typeof billingInvoiceSchema>;
+export type ControlPlaneSnapshot = z.infer<typeof controlPlaneSnapshotSchema>;
+export type CreateTenantRequest = z.infer<typeof createTenantRequestSchema>;
+export type CreateCustomerRequest = z.infer<typeof createCustomerRequestSchema>;
+export type CreateDomainRequest = z.infer<typeof createDomainRequestSchema>;
+export type CreateRoleRequest = z.infer<typeof createRoleRequestSchema>;
+export type CreateManagedUserRequest = z.infer<typeof createManagedUserRequestSchema>;
+export type UpsertBillingSubscriptionRequest = z.infer<typeof upsertBillingSubscriptionRequestSchema>;
+export type CreateBillingInvoiceRequest = z.infer<typeof createBillingInvoiceRequestSchema>;
 export type AuditEvent = z.infer<typeof auditEventSchema>;
 export type CreateIntegrationRequest = z.infer<
   typeof createIntegrationRequestSchema

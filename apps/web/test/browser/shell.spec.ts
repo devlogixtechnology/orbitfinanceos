@@ -27,7 +27,7 @@ test.describe("authenticated tenant shell", () => {
     expect(response?.status()).toBe(200);
     expect(response?.headers()["x-frame-options"]).toBe("DENY");
     expect(response?.headers()["content-security-policy"]).toContain("frame-ancestors 'none'");
-    await expect(page.getByText("Devlogix OrbitOS Staging")).toBeVisible();
+    await expect(page.locator(".tenant-name")).toHaveText("Devlogix OrbitOS Staging");
     await expect(page.getByRole("heading", { name: "Operational overview" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Overview" })).toBeVisible();
     await expect(
@@ -35,6 +35,28 @@ test.describe("authenticated tenant shell", () => {
     ).toBeVisible();
     await expect(page.getByRole("link", { name: "Reconciliation" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Exceptions" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Tenants" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Users & roles" })).toBeVisible();
+  });
+
+  test("presents the reseller control plane and role matrix", async ({ page }) => {
+    await page.getByRole("link", { name: "Tenants" }).click();
+    await expect(page.getByRole("heading", { name: "Tenant network" })).toBeVisible();
+    await expect(page.locator(".tenant-card").getByText("Devlogix OrbitOS Staging")).toBeVisible();
+    await page.screenshot({ path: "test-results/control-plane-tenants.png", fullPage: true });
+
+    await page.getByRole("link", { name: "Users & roles" }).click();
+    await expect(page.getByRole("heading", { name: "Users, roles & permissions" })).toBeVisible();
+    await expect(
+      page.getByRole("cell", { name: "Super Admin", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText("OrbitOS Super Administrator")).toBeVisible();
+
+    await page.getByRole("link", { name: "Billing" }).click();
+    await expect(page.getByRole("heading", { name: "Billing control" })).toBeVisible();
+    await expect(page.getByText("OrbitOS → Tenant")).toBeVisible();
+    await expect(page.getByText("Tenant → Customer")).toBeVisible();
+    await page.screenshot({ path: "test-results/control-plane-billing.png", fullPage: true });
   });
 
   test("persists explicit light and dark themes without hydration drift", async ({ page }) => {

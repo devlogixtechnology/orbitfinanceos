@@ -47,7 +47,7 @@ export function ApplicationShell({
           <span className="environment-label">Staging</span>
         </Link>
 
-        <PrimaryNavigation />
+        <PrimaryNavigation permissions={session.permissions} />
 
         <div className="sidebar-foot">
           <p className="tenant-name">{session.tenant.displayName}</p>
@@ -65,9 +65,9 @@ export function ApplicationShell({
         <header className="topbar">
           <div className="topbar-context">
             <span className="environment-dot" />
-            <span>Staging workspace</span>
+            <span>Staging control plane</span>
             <span aria-hidden="true" className="topbar-divider">/</span>
-            <strong>Tenant workspace</strong>
+            <strong>{session.roles.includes("super_admin") ? "Platform authority" : "Tenant workspace"}</strong>
           </div>
           <div className="topbar-identity">
             <CheckCircle aria-hidden="true" color="var(--color-success)" size={18} weight="fill" />

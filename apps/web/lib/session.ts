@@ -2,6 +2,7 @@ import "server-only";
 
 import {
   integrationListSchema,
+  controlPlaneSnapshotSchema,
   ingestionRunListSchema,
   movementListSchema,
   operationalExceptionListSchema,
@@ -12,6 +13,7 @@ import {
   verificationDecisionListSchema,
   exceptionWorkflowEventListSchema,
   type Integration,
+  type ControlPlaneSnapshot,
   type IngestionRun,
   type CanonicalChainMovement,
   type SessionContext,
@@ -59,6 +61,13 @@ export async function loadAuthorizedSession(): Promise<SessionContext | null> {
   }
 
   const parsed = sessionContextSchema.safeParse(await response.json());
+  return parsed.success ? parsed.data : null;
+}
+
+export async function loadControlPlane(): Promise<ControlPlaneSnapshot | null> {
+  const response = await fetchAuthorizedApi("/v1/control-plane");
+  if (response === null || !response.ok) return null;
+  const parsed = controlPlaneSnapshotSchema.safeParse(await response.json());
   return parsed.success ? parsed.data : null;
 }
 

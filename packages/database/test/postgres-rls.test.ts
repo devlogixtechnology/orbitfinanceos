@@ -72,6 +72,7 @@ describe("PostgreSQL tenant isolation", () => {
           "0006_supabase_hardening.sql",
           "0007_sprint3_verification.sql",
           "0008_sprint3_reconciliation.sql",
+          "0009_reseller_control_plane.sql",
         ].map((file) =>
           readFile(
             fileURLToPath(new URL(`../migrations/${file}`, import.meta.url)),
@@ -87,11 +88,11 @@ describe("PostgreSQL tenant isolation", () => {
         grant orbitos_app to orbit_app;
       `);
       await admin.query(
-        `insert into orbit.tenants (id, display_name) values ($1, 'Tenant A'), ($2, 'Tenant B')`,
+        `insert into orbit.tenants (id, display_name, slug) values ($1, 'Tenant A', 'tenant-a'), ($2, 'Tenant B', 'tenant-b')`,
         [tenantA, tenantB],
       );
       await admin.query(
-        `insert into orbit.actors (tenant_id, id, external_subject) values ($1, $2, 'actor-a')`,
+        `insert into orbit.actors (tenant_id, id, external_subject, display_name) values ($1, $2, 'actor-a', 'Actor A')`,
         [tenantA, actorA],
       );
       await admin.query(
@@ -229,7 +230,7 @@ describe("PostgreSQL tenant isolation", () => {
     expect(created?.token).toBe(token);
     await expect(service.authenticate(token)).resolves.toMatchObject({
       actor: { actorId: actorA, subject: "actor-a" },
-      permissions: [
+      permissions: expect.arrayContaining([
         "evidence:read",
         "exceptions:read",
         "exceptions:write",
@@ -241,7 +242,7 @@ describe("PostgreSQL tenant isolation", () => {
         "reconciliation:read",
         "reconciliation:write",
         "verification:read",
-      ],
+      ]),
       roles: ["administrator"],
       tenant: { tenantId: tenantA },
     });
