@@ -1,5 +1,6 @@
 import { CheckCircle, Globe, ShieldCheck } from "@phosphor-icons/react/dist/ssr";
 
+import { PendingSubmitButton } from "../../../components/pending-submit-button";
 import { loadAuthorizedSession, loadControlPlane } from "../../../lib/session";
 import { createDomain } from "../control-plane-actions";
 
@@ -30,7 +31,7 @@ export default async function DomainsPage({
             <label htmlFor="domain-hostname">Hostname</label><input id="domain-hostname" name="hostname" placeholder="finance.customer.com" required />
             <label htmlFor="domain-kind">Route type</label><select defaultValue="custom" id="domain-kind" name="kind"><option value="custom">Customer-owned domain</option>{isPlatform ? <option value="platform_subdomain">OrbitOS subdomain</option> : null}</select>
             <p className="form-help">Custom domains start in pending DNS state. TLS activation must follow successful ownership verification.</p>
-            <button className="primary-button" type="submit">Add domain route</button>
+            <PendingSubmitButton className="primary-button" pendingLabel="Adding domain">Add domain route</PendingSubmitButton>
           </form> : <div className="inline-alert"><strong>Read-only domain view</strong>Your role cannot change routing.</div>}
           <div className="security-note"><ShieldCheck size={20} /><div><strong>Fail-closed activation</strong><p>Traffic is never routed to an unverified hostname. Verification and certificate issuance are separate controlled steps.</p></div></div>
         </aside>

@@ -1,5 +1,6 @@
 import { PlugsConnected } from "@phosphor-icons/react/dist/ssr";
 
+import { PendingSubmitButton } from "../../../components/pending-submit-button";
 import { loadIngestionRuns, loadIntegrations } from "../../../lib/session";
 import {
   controlIngestionRun,
@@ -63,7 +64,7 @@ export default async function IntegrationsPage({
           <label htmlFor="tokenContract">Token contract</label>
           <input id="tokenContract" name="tokenContract" pattern="0x[a-fA-F0-9]{40}" placeholder="0x…" required type="text" />
           <p className="form-help">Provider endpoints are selected from the validated OrbitOS capability matrix. No signing key is requested or stored.</p>
-          <button className="primary-button" type="submit">Create integration</button>
+          <PendingSubmitButton className="primary-button" pendingLabel="Creating integration">Create integration</PendingSubmitButton>
         </form>
 
         <section aria-labelledby="configured-integrations" className="integration-list">
@@ -100,9 +101,9 @@ export default async function IntegrationsPage({
                     <form action={setIntegrationEnabled}>
                       <input name="integrationId" type="hidden" value={integration.integrationId} />
                       <input name="enabled" type="hidden" value={integration.enabled ? "false" : "true"} />
-                      <button className="secondary-button" type="submit">
+                      <PendingSubmitButton className="secondary-button" pendingLabel={integration.enabled ? "Disabling" : "Enabling"}>
                         {integration.enabled ? "Disable" : "Enable"}
-                      </button>
+                      </PendingSubmitButton>
                     </form>
                     {integration.enabled ? (
                       <form action={startIngestion} className="inline-run-form">
@@ -117,7 +118,7 @@ export default async function IntegrationsPage({
                           required
                           type="text"
                         />
-                        <button className="primary-button" type="submit">Run bounded range</button>
+                        <PendingSubmitButton className="primary-button" pendingLabel="Running range">Run bounded range</PendingSubmitButton>
                       </form>
                     ) : null}
                   </div>
@@ -153,7 +154,7 @@ export default async function IntegrationsPage({
                         required
                         type="text"
                       />
-                      <button className="secondary-button" type="submit">Save source scope</button>
+                      <PendingSubmitButton className="secondary-button" pendingLabel="Saving scope">Save source scope</PendingSubmitButton>
                     </form>
                   </details>
                 </li>
@@ -188,9 +189,9 @@ export default async function IntegrationsPage({
                       {run.state === "running" || run.state === "paused" || run.state === "failed" ? (
                         <form action={controlIngestionRun} className="run-controls">
                           <input name="runId" type="hidden" value={run.runId} />
-                          {run.state === "running" ? <button name="runAction" type="submit" value="pause">Pause</button> : null}
-                          {run.state === "paused" || run.state === "failed" ? <button name="runAction" type="submit" value="resume">Resume</button> : null}
-                          <button name="runAction" type="submit" value="stop">Stop</button>
+                          {run.state === "running" ? <PendingSubmitButton className="secondary-button" name="runAction" pendingLabel="Pausing" value="pause">Pause</PendingSubmitButton> : null}
+                          {run.state === "paused" || run.state === "failed" ? <PendingSubmitButton className="secondary-button" name="runAction" pendingLabel="Resuming" value="resume">Resume</PendingSubmitButton> : null}
+                          <PendingSubmitButton className="secondary-button" name="runAction" pendingLabel="Stopping" value="stop">Stop</PendingSubmitButton>
                         </form>
                       ) : "—"}
                     </td>

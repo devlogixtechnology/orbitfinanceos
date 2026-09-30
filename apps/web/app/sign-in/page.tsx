@@ -1,6 +1,7 @@
 import { Database, Fingerprint, LockKey, ShieldCheck } from "@phosphor-icons/react/dist/ssr";
 import Image from "next/image";
 
+import { PendingSubmitButton } from "../../components/pending-submit-button";
 import { signIn } from "./actions";
 
 const errorMessages: Readonly<Record<string, string>> = {
@@ -53,10 +54,12 @@ export default async function SignInPage({
           ) : null}
           <form action={signIn} className="auth-form">
             <label htmlFor="email">Email address</label>
-            <input autoComplete="username" defaultValue="orbitos@devlogix.com.pk" id="email" name="email" required type="email" />
+            <input autoCapitalize="none" autoComplete="username" id="email" name="email" placeholder="name@company.com" required spellCheck={false} type="email" />
             <label htmlFor="password">Password</label>
             <input autoComplete="current-password" id="password" minLength={12} name="password" required type="password" />
-            <button className="primary-button" type="submit">Sign in</button>
+            <PendingSubmitButton className="primary-button" pendingLabel="Signing in">
+              Sign in
+            </PendingSubmitButton>
           </form>
           <p className="sign-in-support">Access issues? Contact your OrbitOS workspace administrator.</p>
         </div>

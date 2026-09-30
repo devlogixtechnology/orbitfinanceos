@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { signOut } from "../app/app/actions";
+import { PendingSubmitButton } from "./pending-submit-button";
 import { PrimaryNavigation } from "./primary-navigation";
 import { ThemeSelector } from "./theme-selector";
 
@@ -54,9 +55,12 @@ export function ApplicationShell({
           <p className="tenant-role">{session.roles.join(", ")}</p>
           <ThemeSelector initialTheme={initialTheme} />
           <form action={signOut}>
-            <button className="secondary-button sign-out-button" type="submit">
+            <PendingSubmitButton
+              className="secondary-button sign-out-button"
+              pendingLabel="Signing out"
+            >
               Sign out
-            </button>
+            </PendingSubmitButton>
           </form>
         </div>
       </aside>

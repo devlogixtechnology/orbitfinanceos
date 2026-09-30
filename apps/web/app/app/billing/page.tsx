@@ -1,5 +1,6 @@
 import { CreditCard, Receipt, Scales } from "@phosphor-icons/react/dist/ssr";
 
+import { PendingSubmitButton } from "../../../components/pending-submit-button";
 import { loadAuthorizedSession, loadControlPlane } from "../../../lib/session";
 import { createInvoice, createSubscription } from "../control-plane-actions";
 
@@ -37,7 +38,7 @@ export default async function BillingPage({
           <div className="form-row"><div><label htmlFor="subscription-amount">Amount (minor units)</label><input id="subscription-amount" inputMode="numeric" name="amountMinor" pattern="[0-9]+" placeholder="25000" required /></div><div><label htmlFor="subscription-currency">Currency</label><input defaultValue="USD" id="subscription-currency" maxLength={3} minLength={3} name="currency" required /></div></div>
           <div className="form-row"><div><label htmlFor="subscription-interval">Interval</label><select id="subscription-interval" name="interval"><option value="monthly">Monthly</option><option value="annual">Annual</option></select></div><div><label htmlFor="subscription-status">Status</label><select id="subscription-status" name="status"><option value="trialing">Trialing</option><option value="active">Active</option><option value="paused">Paused</option></select></div></div>
           <label htmlFor="next-billing-at">Next billing date</label><input id="next-billing-at" name="nextBillingAt" type="datetime-local" />
-          <button className="primary-button" type="submit">Create subscription</button>
+          <PendingSubmitButton className="primary-button" pendingLabel="Creating subscription">Create subscription</PendingSubmitButton>
         </form></section>
 
         <section className="control-panel form-panel"><div className="section-heading"><p className="eyebrow">Accounts receivable</p><h2>Issue invoice</h2></div><form action={createInvoice} className="configuration-form embedded-form">
@@ -47,7 +48,7 @@ export default async function BillingPage({
           <label htmlFor="invoice-number">Invoice number</label><input id="invoice-number" name="invoiceNumber" placeholder="INV-2026-001" required />
           <div className="form-row"><div><label htmlFor="invoice-amount">Amount (minor units)</label><input id="invoice-amount" inputMode="numeric" name="amountDueMinor" pattern="[0-9]+" required /></div><div><label htmlFor="invoice-currency">Currency</label><input defaultValue="USD" id="invoice-currency" maxLength={3} minLength={3} name="currency" required /></div></div>
           <label htmlFor="invoice-due-at">Due date</label><input id="invoice-due-at" name="dueAt" required type="datetime-local" />
-          <button className="primary-button" type="submit">Issue invoice</button>
+          <PendingSubmitButton className="primary-button" pendingLabel="Issuing invoice">Issue invoice</PendingSubmitButton>
         </form></section>
       </div> : <div className="inline-alert"><strong>Read-only billing view</strong>Your role cannot change commercial records.</div>}
 

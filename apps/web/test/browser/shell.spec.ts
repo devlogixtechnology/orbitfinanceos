@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 async function signIn(page: Page) {
   await page.goto("/sign-in");
+  await page.getByLabel("Email address").fill("orbitos@devlogix.com.pk");
   await page.getByLabel("Password").fill("OrbitOS browser test 2026!");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/app\/overview$/u);
@@ -12,7 +13,7 @@ test("fails closed and redirects an unauthenticated operator", async ({ page }) 
 
   await expect(page).toHaveURL(/\/sign-in$/u);
   await expect(page.getByRole("heading", { name: "Sign in to OrbitOS" })).toBeVisible();
-  await expect(page.getByLabel("Email address")).toHaveValue("orbitos@devlogix.com.pk");
+  await expect(page.getByLabel("Email address")).toHaveValue("");
   await page.screenshot({ path: "test-results/sign-in.png", fullPage: true });
 });
 

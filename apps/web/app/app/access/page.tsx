@@ -1,5 +1,6 @@
 import { Key, ShieldCheck, UserPlus, Users } from "@phosphor-icons/react/dist/ssr";
 
+import { PendingSubmitButton } from "../../../components/pending-submit-button";
 import { loadAuthorizedSession, loadControlPlane } from "../../../lib/session";
 import { createManagedUser, createRole } from "../control-plane-actions";
 
@@ -54,7 +55,7 @@ export default async function AccessPage({
             <label htmlFor="temporary-password">Temporary password</label><input autoComplete="new-password" id="temporary-password" minLength={12} name="temporaryPassword" required type="password" />
             {isTenantAdmin && !isPlatform && (snapshot?.roles.length ?? 0) > 0 ? <><label>Custom roles</label><div className="permission-grid compact-permissions">{snapshot?.roles.map((role) => <label className="permission-option" key={role.roleId}><input name="customRoleIds" type="checkbox" value={role.roleId} /><span>{role.name}</span></label>)}</div></> : null}
             <p className="form-help">Share the temporary password through a secure channel and require rotation during onboarding.</p>
-            <button className="primary-button" type="submit">Create user</button>
+            <PendingSubmitButton className="primary-button" pendingLabel="Creating user">Create user</PendingSubmitButton>
           </form> : <div className="inline-alert"><strong>User creation unavailable</strong>Your role is read-only for identities.</div>}
         </section>
 
@@ -65,7 +66,7 @@ export default async function AccessPage({
             <label htmlFor="role-name">Role name</label><input id="role-name" name="name" placeholder="Reconciliation reviewer" required />
             <label htmlFor="role-description">Description</label><textarea id="role-description" name="description" rows={3} />
             <label>Permissions</label><div className="permission-grid">{allowedPermissions.map(([permission, label]) => <label className="permission-option" key={permission}><input name="permissions" type="checkbox" value={permission} /><span><strong>{label}</strong><small>{permission}</small></span></label>)}</div>
-            <button className="primary-button" type="submit">Create role</button>
+            <PendingSubmitButton className="primary-button" pendingLabel="Creating role">Create role</PendingSubmitButton>
           </form> : <div className="inline-alert"><strong>Managed roles</strong>Only tenant and platform administrators can create custom roles.</div>}
         </section>
       </div>

@@ -1,5 +1,6 @@
 import { Storefront } from "@phosphor-icons/react/dist/ssr";
 
+import { PendingSubmitButton } from "../../../components/pending-submit-button";
 import { loadAuthorizedSession, loadControlPlane } from "../../../lib/session";
 import { createCustomer } from "../control-plane-actions";
 
@@ -32,7 +33,7 @@ export default async function CustomersPage({
               <label htmlFor="customer-reference">Customer reference</label>
               <input id="customer-reference" name="externalReference" placeholder="CUS-001" required />
               <p className="form-help">Use a stable reference from the tenant&apos;s CRM or contract system.</p>
-              <button className="primary-button" type="submit">Create customer</button>
+              <PendingSubmitButton className="primary-button" pendingLabel="Creating customer">Create customer</PendingSubmitButton>
             </form>
           ) : <div className="inline-alert"><strong>Read-only access</strong>Your role cannot create customer workspaces.</div>}
         </aside>

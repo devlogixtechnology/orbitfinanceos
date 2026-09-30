@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { PendingSubmitButton } from "../../../components/pending-submit-button";
 import { loadReconciliations } from "../../../lib/session";
 import { runReconciliation } from "./actions";
 
@@ -21,7 +22,7 @@ export default async function ReconciliationPage() {
           <label htmlFor="reconciliation-opening">Opening atomic quantity</label><input id="reconciliation-opening" name="openingQuantityAtomic" pattern="-?(0|[1-9][0-9]*)" required />
           <label htmlFor="reconciliation-observed">Observed closing atomic quantity (optional)</label><input id="reconciliation-observed" name="observedClosingQuantityAtomic" pattern="-?(0|[1-9][0-9]*)" />
           <input name="policyVersion" type="hidden" value="bsc-v1" />
-          <button className="primary-button" type="submit">Run reconciliation</button>
+          <PendingSubmitButton className="primary-button" pendingLabel="Reconciling">Run reconciliation</PendingSubmitButton>
         </form>
       </details>
       {results === null ? (

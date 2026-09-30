@@ -1,5 +1,6 @@
 import { Buildings, Globe, UsersThree } from "@phosphor-icons/react/dist/ssr";
 
+import { PendingSubmitButton } from "../../../components/pending-submit-button";
 import { loadAuthorizedSession, loadControlPlane } from "../../../lib/session";
 import { createTenant } from "../control-plane-actions";
 
@@ -66,7 +67,7 @@ export default async function PlatformPage({
               <label htmlFor="tenant-slug">Workspace slug</label>
               <div className="domain-input"><input id="tenant-slug" name="slug" pattern="[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?" placeholder="albore" required /><span>.orbitos.devlogix.com.pk</span></div>
               <p className="form-help">The platform route is reserved immediately. DNS activation remains explicit and auditable.</p>
-              <button className="primary-button" type="submit">Create tenant</button>
+              <PendingSubmitButton className="primary-button" pendingLabel="Creating tenant">Create tenant</PendingSubmitButton>
             </form>
           ) : <div className="inline-alert"><strong>Read-only platform view</strong>Your role cannot provision companies.</div>}
         </aside>

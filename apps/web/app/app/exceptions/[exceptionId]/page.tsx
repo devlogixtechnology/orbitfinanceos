@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { PendingSubmitButton } from "../../../../components/pending-submit-button";
 import { loadException, loadExceptionEvents } from "../../../../lib/session";
 import { updateExceptionWorkflow } from "../actions";
 
@@ -25,7 +26,7 @@ export default async function ExceptionDetailPage({ params }: Readonly<{ params:
           <label htmlFor="resolution-reason">Resolution reason code</label><input id="resolution-reason" name="resolutionReasonCode" placeholder="exception:confirmed_difference" />
           <label htmlFor="exception-note">Investigation note</label><textarea id="exception-note" maxLength={4000} name="note" rows={4} />
           <label className="checkbox-label"><input name="assignToMe" type="checkbox" /> Assign to me</label>
-          <button className="primary-button" type="submit">Record workflow update</button>
+          <PendingSubmitButton className="primary-button" pendingLabel="Recording update">Record workflow update</PendingSubmitButton>
           <p className="form-help">This changes workflow metadata only. Evidence and exact derived amounts cannot be edited.</p>
         </form>
         <h2>Audit history</h2>
