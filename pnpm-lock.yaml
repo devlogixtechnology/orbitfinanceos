@@ -108,6 +108,9 @@ importers:
       '@orbitos/authz':
         specifier: workspace:*
         version: link:../../packages/authz
+      '@orbitos/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       '@orbitos/ingestion-core':
         specifier: workspace:*
         version: link:../../packages/ingestion-core

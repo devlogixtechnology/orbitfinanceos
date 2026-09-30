@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   },
   manifest: "/site.webmanifest",
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_APP_URL ?? "https://orbitos.194-163-170-100.sslip.io",
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://app.orbitos.devlogix.com.pk",
   ),
   openGraph: {
     description: "Evidence-backed digital-asset operations",

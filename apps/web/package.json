@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@orbitos/authz": "workspace:*",
+    "@orbitos/database": "workspace:*",
     "@orbitos/integration-core": "workspace:*",
     "@orbitos/ingestion-core": "workspace:*",
     "@orbitos/reconciliation-core": "workspace:*",
