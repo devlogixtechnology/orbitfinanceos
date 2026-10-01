@@ -551,6 +551,8 @@ export class PostgresCustomAuthRepository implements CustomAuthRepository {
       session.tenant_id,
       async (transaction) => {
         const identity = await sql<{
+          customer_display_name: string | null;
+          customer_id: string | null;
           external_subject: string;
           explicit_permissions: readonly string[];
           roles: readonly string[];
@@ -558,6 +560,8 @@ export class PostgresCustomAuthRepository implements CustomAuthRepository {
         }>`
           select
             actors.external_subject,
+            actors.customer_id,
+            customers.display_name as customer_display_name,
             tenants.display_name as tenant_display_name,
             array(
               select role_name from (
@@ -576,11 +580,13 @@ export class PostgresCustomAuthRepository implements CustomAuthRepository {
               from orbit.custom_role_assignments as assignments
               join orbit.custom_role_permissions as permissions
                 on permissions.tenant_id = assignments.tenant_id and permissions.role_id = assignments.role_id
-              where assignments.tenant_id = actors.tenant_id and assignments.actor_id = actors.id
+                where assignments.tenant_id = actors.tenant_id and assignments.actor_id = actors.id
               order by permissions.permission
             ) as explicit_permissions
           from orbit.actors as actors
           join orbit.tenants as tenants on tenants.id = actors.tenant_id
+          left join orbit.customers as customers
+            on customers.tenant_id = actors.tenant_id and customers.id = actors.customer_id
           join orbit.auth_credentials as credentials
             on credentials.tenant_id = actors.tenant_id
             and credentials.actor_id = actors.id
@@ -595,6 +601,8 @@ export class PostgresCustomAuthRepository implements CustomAuthRepository {
         return sessionContextSchema.parse({
           actor: {
             actorId: session.actor_id,
+            ...(row.customer_id ? { customerId: row.customer_id } : {}),
+            ...(row.customer_display_name ? { customerDisplayName: row.customer_display_name } : {}),
             subject: row.external_subject,
           },
           authenticatedAt: session.created_at.toISOString(),

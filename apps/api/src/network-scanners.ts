@@ -10,6 +10,7 @@ export interface NetworkScannerInfo {
 }
 
 export const SUPPORTED_NETWORK_SCANNERS: readonly NetworkScannerInfo[] = [
+  { id: "etherscan-universal", name: "Etherscan Unified V2 (Multi-Network All EVMs)", category: "EVM", chainId: "1", nativeAsset: "ETH/MULTI", defaultApiUrl: "https://api.etherscan.io/v2/api", explorerUrl: "https://etherscan.io", docsUrl: "https://docs.etherscan.io/v2" },
   { id: "ethereum", name: "Ethereum Mainnet (Etherscan)", category: "EVM", chainId: "1", nativeAsset: "ETH", defaultApiUrl: "https://api.etherscan.io/api", explorerUrl: "https://etherscan.io", docsUrl: "https://docs.etherscan.io" },
   { id: "bsc", name: "BNB Smart Chain (BscScan)", category: "EVM", chainId: "56", nativeAsset: "BNB", defaultApiUrl: "https://api.bscscan.com/api", explorerUrl: "https://bscscan.com", docsUrl: "https://docs.bscscan.com" },
   { id: "polygon", name: "Polygon PoS (PolygonScan)", category: "EVM", chainId: "137", nativeAsset: "POL", defaultApiUrl: "https://api.polygonscan.com/api", explorerUrl: "https://polygonscan.com", docsUrl: "https://polygonscan.com/apis" },
@@ -44,6 +45,9 @@ export async function testScannerConnection(
     const url = new URL(apiUrl);
     if (apiKey) {
       url.searchParams.set("apikey", apiKey);
+    }
+    if (networkId === "etherscan-universal" || apiUrl.includes("/v2/api")) {
+      url.searchParams.set("chainid", "1");
     }
     // Check EVM standard blockNumber action
     url.searchParams.set("module", "proxy");

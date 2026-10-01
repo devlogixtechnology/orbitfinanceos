@@ -160,3 +160,40 @@ export async function resetCustomerPasswordAction(formData: FormData): Promise<n
   redirect("/app/customers?reset=1");
 }
 
+export async function deleteCustomerAction(formData: FormData): Promise<never> {
+  const customerId = formData.get("customerId");
+  if (typeof customerId !== "string" || !customerId) {
+    redirect("/app/customers?error=delete-failed");
+  }
+
+  const response = await fetchAuthorizedApi(`/v1/control-plane/customers/${customerId}`, {
+    method: "DELETE",
+  });
+
+  if (response === null || !response.ok) {
+    redirect("/app/customers?error=delete-failed");
+  }
+
+  revalidatePath("/app/customers");
+  revalidatePath("/app/overview");
+  redirect("/app/customers?deleted=1");
+}
+
+export async function deleteUserAction(formData: FormData): Promise<never> {
+  const actorId = formData.get("actorId");
+  if (typeof actorId !== "string" || !actorId) {
+    redirect("/app/access?error=delete-failed");
+  }
+
+  const response = await fetchAuthorizedApi(`/v1/control-plane/users/${actorId}`, {
+    method: "DELETE",
+  });
+
+  if (response === null || !response.ok) {
+    redirect("/app/access?error=delete-failed");
+  }
+
+  revalidatePath("/app/access");
+  redirect("/app/access?deleted=1");
+}
+

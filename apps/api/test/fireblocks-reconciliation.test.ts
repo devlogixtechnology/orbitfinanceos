@@ -122,6 +122,7 @@ describe("Fireblocks and CSV reconciliation endpoints", () => {
   it("lists Fireblocks vault wallets for customer and admin", async () => {
     const dataConnectionRepo: DataConnectionRepository = {
       configure: vi.fn(),
+      deleteCsvImport: vi.fn(() => Promise.resolve(true)),
       list: vi.fn(() => Promise.resolve([fbConnection])),
       listCsvImports: vi.fn(() => Promise.resolve([])),
       recordCsvImport: vi.fn(),
@@ -160,6 +161,7 @@ describe("Fireblocks and CSV reconciliation endpoints", () => {
   it("reconciles live Fireblocks wallet balance", async () => {
     const dataConnectionRepo: DataConnectionRepository = {
       configure: vi.fn(),
+      deleteCsvImport: vi.fn(() => Promise.resolve(true)),
       list: vi.fn(() => Promise.resolve([fbConnection])),
       listCsvImports: vi.fn(() => Promise.resolve([])),
       recordCsvImport: vi.fn(),
@@ -212,6 +214,7 @@ describe("Fireblocks and CSV reconciliation endpoints", () => {
       "wallet_address,asset_id,opening,closing\n0x28a1c8942b00508a546d0a42426027a0033d5964,bsc:56:native,0,2500000000000000000\n";
     const dataConnectionRepo: DataConnectionRepository = {
       configure: vi.fn(),
+      deleteCsvImport: vi.fn(() => Promise.resolve(true)),
       list: vi.fn(() => Promise.resolve([fbConnection])),
       listCsvImports: vi.fn(() => Promise.resolve([csvImport])),
       recordCsvImport: vi.fn(),

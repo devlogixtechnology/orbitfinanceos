@@ -35,6 +35,8 @@ const repository = {
   createSubscription: vi.fn<ControlPlaneRepository["createSubscription"]>(),
   createTenant,
   createUser: vi.fn<ControlPlaneRepository["createUser"]>(),
+  deleteCustomer: vi.fn<ControlPlaneRepository["deleteCustomer"]>(),
+  deleteUser: vi.fn<ControlPlaneRepository["deleteUser"]>(),
   provisionWorkspace,
   resetCustomerPassword: vi.fn<ControlPlaneRepository["resetCustomerPassword"]>(),
   snapshot: vi.fn<ControlPlaneRepository["snapshot"]>(),

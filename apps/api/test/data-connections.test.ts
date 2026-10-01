@@ -45,6 +45,7 @@ const configure = vi.fn<DataConnectionRepository["configure"]>(() => Promise.res
 const recordCsvImport = vi.fn<DataConnectionRepository["recordCsvImport"]>(() => Promise.resolve(csvImport));
 const repository: DataConnectionRepository = {
   configure,
+  deleteCsvImport: vi.fn<DataConnectionRepository["deleteCsvImport"]>(() => Promise.resolve(true)),
   list: () => Promise.resolve([connection]),
   listCsvImports: () => Promise.resolve([csvImport]),
   recordCsvImport,

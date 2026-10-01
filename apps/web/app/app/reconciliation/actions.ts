@@ -73,3 +73,23 @@ export async function reconcileCsvImport(formData: FormData): Promise<never> {
   revalidatePath("/app/exceptions");
   redirect("/app/reconciliation?reconciled=1");
 }
+
+export async function pushToQuickBooksAction(formData: FormData): Promise<never> {
+  const reconciliationId = uuidSchema.safeParse(formData.get("reconciliationId"));
+  if (!reconciliationId.success) {
+    redirect("/app/reconciliation?error=invalid-reconciliation");
+  }
+
+  const response = await fetchAuthorizedApi(`/v1/reconciliations/${reconciliationId.data}/push-to-quickbooks`, {
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+
+  if (response === null || !response.ok) {
+    redirect("/app/reconciliation?error=qb-sync-failed");
+  }
+
+  revalidatePath("/app/reconciliation");
+  redirect("/app/reconciliation?qbSynced=1");
+}
+

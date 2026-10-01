@@ -64,6 +64,7 @@ export const providerAgreementStateSchema = z.enum([
 
 export const bscChainIdSchema = z.enum(["56", "97"]);
 export const evmAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/u);
+export const walletAddressSchema = z.string().trim().min(1).max(128);
 export const integrationProviderGroupInputSchema = z
   .object({
     endpointReference: z.string().min(1),
@@ -430,7 +431,7 @@ export const positionReconciliationSchema = z
     state: z.enum(["matched", "mismatched", "not_observed"]),
     tenantId: uuidSchema,
     verifiedMovementIds: z.array(uuidSchema),
-    walletAddress: evmAddressSchema,
+    walletAddress: walletAddressSchema,
   })
   .strict();
 
@@ -447,7 +448,7 @@ export const createPositionReconciliationRequestSchema = z
     openingQuantityAtomic: atomicAmountSchema,
     policyVersion: z.string().min(1),
     schemaVersion: z.literal("1"),
-    walletAddress: evmAddressSchema,
+    walletAddress: walletAddressSchema,
   })
   .strict();
 
@@ -525,6 +526,7 @@ export const sessionContextSchema = z
       .object({
         actorId: uuidSchema,
         customerId: uuidSchema.optional(),
+        customerDisplayName: z.string().optional(),
         subject: z.string().min(1),
       })
       .strict(),
@@ -584,6 +586,7 @@ export const customerSchema = z
     displayName: z.string().min(2).max(120),
     email: z.string().optional(),
     externalReference: z.string().min(1).max(120),
+    initialPassword: z.string().optional(),
     status: tenantLifecycleSchema,
     tenantId: uuidSchema,
   })
@@ -618,9 +621,11 @@ export const managedUserSchema = z
   .object({
     actorId: uuidSchema,
     createdAt: utcInstantSchema,
+    customerId: uuidSchema.optional(),
     displayName: z.string().min(2).max(120),
     email: z.email(),
     enabled: z.boolean(),
+    initialPassword: z.string().optional(),
     roles: z.array(z.string().min(1)),
     tenantId: uuidSchema,
   })

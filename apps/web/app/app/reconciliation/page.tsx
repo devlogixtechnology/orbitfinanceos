@@ -1,4 +1,14 @@
-import { ArrowsClockwise, CheckCircle, FileCsv, ShieldCheck, Vault, WarningCircle } from "@phosphor-icons/react/dist/ssr";
+import {
+  ArrowsClockwise,
+  CheckCircle,
+  DownloadSimple,
+  FileCsv,
+  Gear,
+  ShieldCheck,
+  Trash,
+  Vault,
+  WarningCircle,
+} from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 
 import { PendingSubmitButton } from "../../../components/pending-submit-button";
@@ -10,7 +20,9 @@ import {
   loadFireblocksWallets,
   loadReconciliations,
 } from "../../../lib/session";
+import { deleteCsvImportAction } from "../integrations/actions";
 import {
+  pushToQuickBooksAction,
   reconcileCsvImport,
   reconcileFireblocksWallet,
   runReconciliation,
@@ -19,7 +31,7 @@ import {
 export default async function ReconciliationPage({
   searchParams,
 }: Readonly<{
-  searchParams: Promise<{ customerId?: string; error?: string; reconciled?: string }>;
+  searchParams: Promise<{ customerId?: string; deleted?: string; error?: string; qbSynced?: string; reconciled?: string }>;
 }>) {
   const status = await searchParams;
   const session = await loadAuthorizedSession();
@@ -54,17 +66,31 @@ export default async function ReconciliationPage({
           Reconciliation completed successfully. Validation results and difference calculations updated below.
         </p>
       ) : null}
+      {status.qbSynced === "1" ? (
+        <p className="success-alert" role="status">
+          Reconciliation journal entry successfully synced and recorded to QuickBooks Online.
+        </p>
+      ) : null}
+      {status.deleted === "1" ? (
+        <p className="success-alert" role="status">
+          CSV statement removed successfully.
+        </p>
+      ) : null}
       {status.error !== undefined ? (
         <p className="form-error" role="alert">
           {status.error === "csv-empty"
             ? "CSV REJECTED: The uploaded CSV file contains no valid transactions or data rows. Real data is required."
-            : status.error === "fireblocks-reconciliation-failed"
-              ? "Fireblocks live reconciliation failed. Ensure the wallet address is active in Fireblocks."
-              : status.error === "csv-reconciliation-failed"
-                ? "CSV reconciliation could not be processed. Verify the file records."
-                : status.error === "csv-invalid"
-                  ? "Invalid CSV import reference."
-                  : "Reconciliation run encountered an error."}
+            : status.error === "delete-failed"
+              ? "Failed to remove CSV statement."
+              : status.error === "qb-sync-failed"
+                ? "Failed to push reconciliation to QuickBooks. Ensure a valid QuickBooks connection exists."
+                : status.error === "fireblocks-reconciliation-failed"
+                  ? "Fireblocks live reconciliation failed. Ensure the wallet address is active in Fireblocks."
+                  : status.error === "csv-reconciliation-failed"
+                    ? "CSV reconciliation could not be processed. Verify the file records."
+                    : status.error === "csv-invalid"
+                      ? "Invalid CSV import reference."
+                      : "Reconciliation run encountered an error."}
         </p>
       ) : null}
 
@@ -287,13 +313,27 @@ export default async function ReconciliationPage({
                       {imp.sha256.slice(0, 16)}…
                     </td>
                     <td>
-                      <form action={reconcileCsvImport} style={{ margin: 0 }}>
-                        <input name="importId" type="hidden" value={imp.importId} />
-                        {imp.customerId ? <input name="customerId" type="hidden" value={imp.customerId} /> : null}
-                        <PendingSubmitButton className="secondary-button" pendingLabel="Reconciling...">
-                          Reconcile CSV Data
-                        </PendingSubmitButton>
-                      </form>
+                      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                        <form action={reconcileCsvImport} style={{ margin: 0 }}>
+                          <input name="importId" type="hidden" value={imp.importId} />
+                          {imp.customerId ? <input name="customerId" type="hidden" value={imp.customerId} /> : null}
+                          <PendingSubmitButton className="secondary-button" pendingLabel="Reconciling...">
+                            Reconcile CSV Data
+                          </PendingSubmitButton>
+                        </form>
+                        <form action={deleteCsvImportAction} style={{ margin: 0 }}>
+                          <input name="importId" type="hidden" value={imp.importId} />
+                          <input name="returnTo" type="hidden" value="/app/reconciliation" />
+                          <button
+                            className="ghost-button destructive-button"
+                            style={{ padding: "6px 10px" }}
+                            type="submit"
+                            title="Delete CSV statement"
+                          >
+                            <Trash size={16} />
+                          </button>
+                        </form>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -304,12 +344,32 @@ export default async function ReconciliationPage({
       </section>
 
       <section className="control-panel" style={{ marginBottom: "24px" }}>
-        <div className="section-heading">
-          <p className="eyebrow">Auditable Ledger State</p>
-          <h2>Validation &amp; Reconciliation Results</h2>
-          <p>
-            Independent validation comparing observed custody/CSV quantities against expected closing balances derived from verified ledger facts.
-          </p>
+        <div className="section-heading" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
+          <div>
+            <p className="eyebrow">Auditable Ledger State</p>
+            <h2>Validation &amp; Reconciliation Results</h2>
+            <p>
+              Independent validation comparing observed custody/CSV quantities against expected closing balances derived from verified ledger facts.
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            <a
+              href={`/api/export-reconciliations${activeCustomerId ? `?customerId=${activeCustomerId}` : ""}`}
+              className="secondary-button"
+              style={{ display: "inline-flex", alignItems: "center", gap: "6px", textDecoration: "none", fontSize: "13px" }}
+            >
+              <DownloadSimple size={16} />
+              Export CSV
+            </a>
+            <Link
+              href="/app/settings"
+              className="ghost-button"
+              style={{ display: "inline-flex", alignItems: "center", gap: "6px", textDecoration: "none", fontSize: "13px" }}
+            >
+              <Gear size={16} />
+              Automation Settings
+            </Link>
+          </div>
         </div>
 
         {results === null ? (
@@ -336,6 +396,7 @@ export default async function ReconciliationPage({
                   <th>Difference</th>
                   <th>State &amp; Validation</th>
                   <th>Exceptions</th>
+                  <th>QuickBooks Sync</th>
                 </tr>
               </thead>
               <tbody>
@@ -382,6 +443,18 @@ export default async function ReconciliationPage({
                         <span className={`status-badge ${result.exceptionCount === "0" ? "" : "status-error"}`}>
                           {result.exceptionCount} {result.exceptionCount === "1" ? "issue" : "issues"}
                         </span>
+                      </td>
+                      <td>
+                        <form action={pushToQuickBooksAction} style={{ margin: 0 }}>
+                          <input name="reconciliationId" type="hidden" value={result.reconciliationId} />
+                          <PendingSubmitButton
+                            className="secondary-button"
+                            style={{ padding: "4px 10px", fontSize: "12px", whiteSpace: "nowrap" }}
+                            pendingLabel="Pushing..."
+                          >
+                            Push to QB
+                          </PendingSubmitButton>
+                        </form>
                       </td>
                     </tr>
                   );

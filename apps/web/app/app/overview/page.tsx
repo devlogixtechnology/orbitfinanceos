@@ -7,6 +7,8 @@ import {
   ShieldCheck,
   Storefront,
   Users,
+  Vault,
+  Wallet,
   WarningCircle,
 } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
@@ -15,6 +17,7 @@ import {
   loadAuthorizedSession,
   loadControlPlane,
   loadExceptions,
+  loadFireblocksWallets,
   loadIntegrations,
   loadMovements,
   loadReconciliations,
@@ -28,20 +31,25 @@ export default async function OverviewPage({
   searchParams,
 }: Readonly<{ searchParams: Promise<{ customerId?: string }> }>) {
   const { customerId } = await searchParams;
-  const [session, snapshot, integrations, allIntegrations, movements, reconciliations, allReconciliations, exceptions] = await Promise.all([
-    loadAuthorizedSession(),
-    loadControlPlane(),
-    loadIntegrations(customerId),
-    loadIntegrations(),
+  const session = await loadAuthorizedSession();
+  const isCustomer = Boolean(session?.actor.customerId);
+  const activeCustomerId = session?.actor.customerId ?? customerId;
+  const effectiveCompany = session?.actor.customerDisplayName ?? session?.tenant.displayName ?? "Company";
+
+  const [snapshot, integrations, allIntegrations, movements, reconciliations, allReconciliations, exceptions, wallets] = await Promise.all([
+    !isCustomer ? loadControlPlane() : Promise.resolve(null),
+    loadIntegrations(activeCustomerId),
+    !isCustomer ? loadIntegrations() : Promise.resolve(null),
     loadMovements(),
-    loadReconciliations(customerId),
-    loadReconciliations(),
+    loadReconciliations(activeCustomerId),
+    !isCustomer ? loadReconciliations() : Promise.resolve(null),
     loadExceptions(),
+    loadFireblocksWallets(activeCustomerId),
   ]);
 
-  const isAdmin = session?.roles.includes("super_admin") || session?.roles.includes("tenant_admin");
+  const isAdmin = !isCustomer && (session?.roles.includes("super_admin") || session?.roles.includes("tenant_admin"));
   const customers = snapshot?.customers ?? [];
-  const selectedCustomer = customerId ? customers.find((c) => c.customerId === customerId) : undefined;
+  const selectedCustomer = activeCustomerId ? customers.find((c) => c.customerId === activeCustomerId) : undefined;
 
   const hasUnavailableData = [integrations, movements, reconciliations, exceptions]
     .some((value) => value === null);
@@ -51,21 +59,23 @@ export default async function OverviewPage({
     <main className="page">
       <section className="overview-hero">
         <header className="page-header overview-heading">
-          <p className="eyebrow">{session?.tenant.displayName ?? "Company"} · Control Center</p>
+          <p className="eyebrow">{effectiveCompany} · {isCustomer ? "Client Workspace" : "Control Center"}</p>
           <h1>
-            {selectedCustomer ? `${selectedCustomer.displayName} Overview` : `${session?.tenant.displayName ?? "Operational"} Overview`}
+            {isCustomer ? `${effectiveCompany} Dashboard` : selectedCustomer ? `${selectedCustomer.displayName} Overview` : `${effectiveCompany} Overview`}
           </h1>
           <p>
-            {selectedCustomer
-              ? `Filtered portfolio and reconciled position telemetry for ${selectedCustomer.displayName} (${selectedCustomer.externalReference}).`
-              : `A live company snapshot for ${session?.tenant.displayName ?? "OrbitOS"} from source configuration through evidence-backed reconciliation and exception resolution.`}
+            {isCustomer
+              ? `Real-time custody portfolio, connected wallets, and dual-party financial verification for ${effectiveCompany}.`
+              : selectedCustomer
+                ? `Filtered portfolio and reconciled position telemetry for ${selectedCustomer.displayName} (${selectedCustomer.externalReference}).`
+                : `A live company snapshot for ${effectiveCompany} from source configuration through evidence-backed reconciliation and exception resolution.`}
           </p>
         </header>
         <div className="control-posture">
           <div className="control-posture-icon"><ShieldCheck aria-hidden="true" size={24} weight="fill" /></div>
           <div>
-            <span>Tenant Workspace</span>
-            <strong>{session?.tenant.displayName ?? "Staging"}</strong>
+            <span>{isCustomer ? "Company Workspace" : "Operational Status"}</span>
+            <strong>{effectiveCompany}</strong>
           </div>
         </div>
       </section>
@@ -251,6 +261,90 @@ export default async function OverviewPage({
           </div>
         </section>
       ) : null}
+
+      {/* Custody Wallets & Balances */}
+      <section className="control-panel" style={{ marginBottom: "28px" }}>
+        <div className="section-heading" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
+          <div>
+            <p className="eyebrow">{isCustomer ? "Connected Custody" : "Custody & Asset Telemetry"}</p>
+            <h2><Vault size={22} style={{ verticalAlign: "middle", marginRight: "8px", color: "var(--color-accent)" }} />Connected Wallets &amp; Live Balances</h2>
+            <p>Live wallet addresses, asset balances, and as-at timestamps synced from Fireblocks and registered company wallets.</p>
+          </div>
+          <div style={{ display: "flex", gap: "10px" }}>
+            <Link href={activeCustomerId ? `/app/integrations?customerId=${activeCustomerId}` : "/app/integrations"} className="secondary-button" style={{ fontSize: "13px", padding: "6px 12px" }}>
+              Manage Sources
+            </Link>
+            <Link href={activeCustomerId ? `/app/reconciliation?customerId=${activeCustomerId}` : "/app/reconciliation"} className="primary-button" style={{ fontSize: "13px", padding: "6px 12px" }}>
+              Reconciliation
+            </Link>
+          </div>
+        </div>
+
+        {wallets === null || wallets.length === 0 ? (
+          <div className="empty-state" style={{ padding: "32px 20px" }}>
+            <Wallet size={32} style={{ opacity: 0.5, marginBottom: "8px" }} />
+            <strong>No custody wallets linked yet</strong>
+            <p style={{ maxWidth: "460px", margin: "6px auto 16px", fontSize: "13px", color: "var(--color-text-secondary)" }}>
+              Connect your Fireblocks API in Integrations or import a CSV statement to track live balances and automatic roll-forwards.
+            </p>
+            <Link href={activeCustomerId ? `/app/integrations?customerId=${activeCustomerId}` : "/app/integrations"} className="secondary-button" style={{ fontSize: "13px" }}>
+              Connect Fireblocks Custody
+            </Link>
+          </div>
+        ) : (
+          <div className="table-scroll">
+            <table className="control-table">
+              <thead>
+                <tr>
+                  <th>Vault / Wallet</th>
+                  <th>Address</th>
+                  <th>Asset</th>
+                  <th>As Of</th>
+                  <th>Live Balance</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {wallets.map((w) => (
+                  <tr key={`${w.vaultAccountId}-${w.walletAddress}-${w.assetId}`}>
+                    <td>
+                      <strong>{w.vaultAccountName || w.vaultAccountId}</strong>
+                      <span className="table-subline mono-value">Vault: {w.vaultAccountId}</span>
+                    </td>
+                    <td className="mono-value" style={{ fontSize: "12px" }}>
+                      {w.walletAddress.length > 24
+                        ? `${w.walletAddress.slice(0, 10)}…${w.walletAddress.slice(-8)}`
+                        : w.walletAddress}
+                    </td>
+                    <td>
+                      <strong>{w.assetId.includes("native") ? "BNB" : w.assetId.split(":").pop()?.toUpperCase() ?? w.assetId}</strong>
+                      <span className="table-subline mono-value">{w.assetId}</span>
+                    </td>
+                    <td style={{ fontSize: "12px", whiteSpace: "nowrap" }}>
+                      {new Date(w.asAt).toLocaleString()}
+                    </td>
+                    <td>
+                      <strong style={{ fontSize: "14px", color: "var(--color-text-primary)" }}>{w.totalBalance}</strong>
+                      {w.pendingBalance !== "0" ? (
+                        <span className="table-subline" style={{ color: "var(--color-warning)" }}>Pending: {w.pendingBalance}</span>
+                      ) : null}
+                    </td>
+                    <td>
+                      <Link
+                        href={activeCustomerId ? `/app/reconciliation?customerId=${activeCustomerId}` : "/app/reconciliation"}
+                        className="secondary-button"
+                        style={{ fontSize: "12px", padding: "4px 8px" }}
+                      >
+                        Reconcile
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <section className="overview-grid">
         <div className="overview-panel">

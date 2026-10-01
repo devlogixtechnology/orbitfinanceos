@@ -1,4 +1,4 @@
-import { Broadcast, CloudArrowUp, FileCsv, PlugsConnected, Vault, Wallet } from "@phosphor-icons/react/dist/ssr";
+import { Broadcast, CloudArrowUp, FileCsv, PlugsConnected, Trash, Vault, Wallet } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 
 import { PendingSubmitButton } from "../../../components/pending-submit-button";
@@ -15,6 +15,7 @@ import {
   configureDataConnection,
   controlIngestionRun,
   createIntegration,
+  deleteCsvImportAction,
   reconcileCsvImport,
   setIntegrationEnabled,
   startIngestion,
@@ -31,6 +32,7 @@ export default async function IntegrationsPage({
     customerId?: string;
     connected?: string;
     created?: string;
+    deleted?: string;
     error?: string;
     imported?: string;
     run?: string;
@@ -48,10 +50,13 @@ export default async function IntegrationsPage({
     loadIngestionRuns(),
     loadDataConnections(activeCustomerId),
     loadCsvImports(activeCustomerId),
-    loadSupportedScanners(),
+    !isCustomer ? loadSupportedScanners() : Promise.resolve([]),
   ]);
 
   const customerNameMap = new Map(snapshot?.customers.map((c) => [c.customerId, c.displayName]) ?? []);
+  const visibleConnections = isCustomer
+    ? connections?.filter((c) => c.provider !== "network_scanner") ?? []
+    : connections ?? [];
 
   return (
     <main className="page">
@@ -120,6 +125,11 @@ export default async function IntegrationsPage({
           CSV validated and preserved as immutable source evidence.
         </p>
       ) : null}
+      {status.deleted === "1" ? (
+        <p className="success-alert" role="status">
+          CSV import record removed successfully.
+        </p>
+      ) : null}
       {status.created === "1" ? (
         <p className="success-alert" role="status">
           Integration created inside this company workspace.
@@ -141,21 +151,23 @@ export default async function IntegrationsPage({
             ? "Choose a valid UTF-8 CSV under 100 MB with a header and at least one data row."
             : status.error === "csv-empty"
               ? "CSV REJECTED: The uploaded CSV contains no readable transactions or data rows. Real data is required."
-              : status.error === "wallet-invalid"
-                ? "Invalid wallet address: EVM wallet address must start with 0x and be a valid hex address."
-                : status.error === "csv-unavailable"
-                  ? "The CSV could not be preserved. No partial import was created."
-                  : status.error === "connection-invalid"
-                    ? "Check the connection identifiers and vault reference."
-                    : status.error === "connection-unavailable"
-                      ? "The secure connection references could not be saved."
-                      : status.error === "reconciliation-failed"
-                        ? "CSV reconciliation could not be initiated. Verify the file format."
-                        : status.error === "invalid"
-                          ? "Check the chain, block number, wallet, and token contract values."
-                          : status.error === "run"
-                            ? "The bounded run could not complete. Its checkpoint and quarantine state were preserved."
-                            : "The integration could not be saved. Please try again."}
+              : status.error === "delete-failed"
+                ? "Failed to remove CSV import record."
+                : status.error === "wallet-invalid"
+                  ? "Invalid wallet address: EVM wallet address must start with 0x and be a valid hex address."
+                  : status.error === "csv-unavailable"
+                    ? "The CSV could not be preserved. No partial import was created."
+                    : status.error === "connection-invalid"
+                      ? "Check the connection identifiers and vault reference."
+                      : status.error === "connection-unavailable"
+                        ? "The secure connection references could not be saved."
+                        : status.error === "reconciliation-failed"
+                          ? "CSV reconciliation could not be initiated. Verify the file format."
+                          : status.error === "invalid"
+                            ? "Check the chain, block number, wallet, and token contract values."
+                            : status.error === "run"
+                              ? "The bounded run could not complete. Its checkpoint and quarantine state were preserved."
+                              : "The integration could not be saved. Please try again."}
         </p>
       ) : null}
 
@@ -210,8 +222,8 @@ export default async function IntegrationsPage({
             {csvImports !== null && csvImports.length > 0 ? (
               <div className="source-history">
                 <strong>Recent imports</strong>
-                {csvImports.slice(0, 4).map((item) => (
-                  <div key={item.importId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--color-border)" }}>
+                {csvImports.slice(0, 6).map((item) => (
+                  <div key={item.importId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--color-border)" }}>
                     <div>
                       <span style={{ fontWeight: 600 }}>{item.fileName}</span>
                       <small style={{ display: "block" }}>
@@ -219,43 +231,59 @@ export default async function IntegrationsPage({
                         {item.customerId && customerNameMap.has(item.customerId) ? ` · ${customerNameMap.get(item.customerId)}` : ""}
                       </small>
                     </div>
-                    <form action={reconcileCsvImport} style={{ margin: 0 }}>
-                      <input name="importId" type="hidden" value={item.importId} />
-                      {item.customerId ? <input name="customerId" type="hidden" value={item.customerId} /> : null}
-                      <PendingSubmitButton className="secondary-button" pendingLabel="Reconciling...">
-                        Start Reconciliation
-                      </PendingSubmitButton>
-                    </form>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      <form action={reconcileCsvImport} style={{ margin: 0 }}>
+                        <input name="importId" type="hidden" value={item.importId} />
+                        {item.customerId ? <input name="customerId" type="hidden" value={item.customerId} /> : null}
+                        <PendingSubmitButton className="secondary-button" pendingLabel="Reconciling...">
+                          Start Reconciliation
+                        </PendingSubmitButton>
+                      </form>
+                      <form action={deleteCsvImportAction} style={{ margin: 0 }}>
+                        <input name="importId" type="hidden" value={item.importId} />
+                        <input name="returnTo" type="hidden" value="/app/integrations" />
+                        <button
+                          className="ghost-button destructive-button"
+                          style={{ padding: "6px 10px" }}
+                          type="submit"
+                          title="Delete CSV file"
+                        >
+                          <Trash size={16} />
+                        </button>
+                      </form>
+                    </div>
                   </div>
                 ))}
               </div>
             ) : null}
           </article>
 
-          <article className="source-card">
-            <div className="source-card-head">
-              <span className="source-icon"><Broadcast size={22} /></span>
-              <span className="status-pill">
-                {connections?.some((item) => item.provider === "network_scanner") ? "Configured" : "22+ Networks"}
-              </span>
-            </div>
-            <div>
-              <p className="eyebrow">On-Chain Verification</p>
-              <h3>Blockchain Scanners</h3>
-              <p>Configure 22+ blockchain scanner APIs (Etherscan, BscScan, PolygonScan, etc.) to verify and trace transactions on-chain.</p>
-            </div>
-            <details className="source-setup" open={connections?.some((item) => item.provider === "network_scanner") ? undefined : false}>
-              <summary>
-                {connections?.some((item) => item.provider === "network_scanner") ? "Configure another scanner" : "Connect Network Scanner"}
-              </summary>
-              <ScannerConfigForm
-                customers={snapshot?.customers}
-                defaultCustomerId={activeCustomerId}
-                isCustomer={isCustomer}
-                scanners={supportedScanners}
-              />
-            </details>
-          </article>
+          {!isCustomer ? (
+            <article className="source-card">
+              <div className="source-card-head">
+                <span className="source-icon"><Broadcast size={22} /></span>
+                <span className="status-pill">
+                  {connections?.some((item) => item.provider === "network_scanner") ? "Configured" : "22+ Networks"}
+                </span>
+              </div>
+              <div>
+                <p className="eyebrow">On-Chain Verification</p>
+                <h3>Blockchain Scanners</h3>
+                <p>Configure 22+ blockchain scanner APIs (Etherscan Universal, BscScan, PolygonScan, etc.) to verify and trace transactions on-chain.</p>
+              </div>
+              <details className="source-setup" open={connections?.some((item) => item.provider === "network_scanner") ? undefined : false}>
+                <summary>
+                  {connections?.some((item) => item.provider === "network_scanner") ? "Configure another scanner" : "Connect Network Scanner"}
+                </summary>
+                <ScannerConfigForm
+                  customers={snapshot?.customers}
+                  defaultCustomerId={activeCustomerId}
+                  isCustomer={isCustomer}
+                  scanners={supportedScanners}
+                />
+              </details>
+            </article>
+          ) : null}
 
           <article className="source-card">
             <div className="source-card-head">
@@ -596,11 +624,11 @@ export default async function IntegrationsPage({
         </section>
       ) : null}
 
-      {connections !== null && connections.length > 0 ? (
+      {visibleConnections.length > 0 ? (
         <section aria-labelledby="connections-inventory" className="history-panel" style={{ marginTop: "24px" }}>
           <div className="section-heading">
             <p className="eyebrow">Enterprise Telemetry Sources</p>
-            <h2 id="connections-inventory">Configured Data Sources &amp; Network Scanners ({connections.length})</h2>
+            <h2 id="connections-inventory">{isCustomer ? "Configured Data Sources" : "Configured Data Sources & Network Scanners"} ({visibleConnections.length})</h2>
           </div>
           <div className="table-scroll">
             <table>
@@ -614,7 +642,7 @@ export default async function IntegrationsPage({
                 </tr>
               </thead>
               <tbody>
-                {connections.map((c) => {
+                {visibleConnections.map((c) => {
                   const customerLabel = c.customerId && customerNameMap.has(c.customerId)
                     ? customerNameMap.get(c.customerId)
                     : "Tenant-wide (Default)";

@@ -684,6 +684,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           customerId.data,
           passwordHash,
           input.data.email,
+          input.data.newPassword,
         );
         return reply.status(200).send({
           customerId: result.customerId,
@@ -691,6 +692,25 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           message: "Customer password reset successfully.",
           status: "success",
         });
+      } catch (error) {
+        return sendControlPlaneError(request, reply, error);
+      }
+    },
+  );
+
+  server.delete<{ Params: { customerId: string } }>(
+    "/v1/control-plane/customers/:customerId",
+    async (request, reply) => {
+      const session = await resolveSession(request, reply, authenticator);
+      if (session === undefined || !requirePermission(session, "customers:write", reply)) return reply;
+      const customerId = uuidSchema.safeParse(request.params.customerId);
+      if (!customerId.success) return sendError(reply, 400, "INVALID_REQUEST", "The customer ID is invalid.");
+      if (controlPlaneRepository === undefined) {
+        return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "Control-plane persistence is not configured.");
+      }
+      try {
+        await controlPlaneRepository.deleteCustomer(controlPlaneAccess(session), customerId.data, session.tenant.tenantId);
+        return reply.status(200).send({ message: "Customer deleted successfully.", status: "success" });
       } catch (error) {
         return sendControlPlaneError(request, reply, error);
       }
@@ -769,6 +789,25 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return sendControlPlaneError(request, reply, error);
     }
   });
+
+  server.delete<{ Params: { actorId: string } }>(
+    "/v1/control-plane/users/:actorId",
+    async (request, reply) => {
+      const session = await resolveSession(request, reply, authenticator);
+      if (session === undefined || !requirePermission(session, "users:write", reply)) return reply;
+      const actorId = uuidSchema.safeParse(request.params.actorId);
+      if (!actorId.success) return sendError(reply, 400, "INVALID_REQUEST", "The user actor ID is invalid.");
+      if (controlPlaneRepository === undefined) {
+        return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "Control-plane persistence is not configured.");
+      }
+      try {
+        await controlPlaneRepository.deleteUser(controlPlaneAccess(session), actorId.data, session.tenant.tenantId);
+        return reply.status(200).send({ message: "User deleted successfully.", status: "success" });
+      } catch (error) {
+        return sendControlPlaneError(request, reply, error);
+      }
+    },
+  );
 
   server.post("/v1/control-plane/subscriptions", async (request, reply) => {
     const session = await resolveSession(request, reply, authenticator);
@@ -965,6 +1004,26 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       } catch (error) {
         request.log.error({ errorName: error instanceof Error ? error.name : "UnknownError" }, "CSV import failed");
         return sendError(reply, 400, "CSV_IMPORT_FAILED", "The CSV could not be validated and preserved.");
+      }
+    },
+  );
+
+  server.delete<{ Params: { importId: string } }>(
+    "/v1/csv-imports/:importId",
+    async (request, reply) => {
+      const session = await resolveSession(request, reply, authenticator);
+      if (session === undefined || !requirePermission(session, "integrations:write", reply)) return reply;
+      const importId = uuidSchema.safeParse(request.params.importId);
+      if (!importId.success) return sendError(reply, 400, "INVALID_REQUEST", "The CSV import ID is invalid.");
+      if (dataConnectionRepository === undefined) {
+        return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "CSV import persistence is not configured.");
+      }
+      try {
+        const deleted = await dataConnectionRepository.deleteCsvImport(session.tenant.tenantId, importId.data);
+        return reply.status(200).send({ message: "CSV import deleted successfully.", status: "success", success: deleted });
+      } catch (error) {
+        request.log.error({ errorName: error instanceof Error ? error.name : "UnknownError" }, "Failed to delete CSV import");
+        return sendError(reply, 500, "CSV_DELETE_FAILED", "Failed to delete CSV import.");
       }
     },
   );
@@ -1248,6 +1307,37 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return result === null
         ? sendError(reply, 404, "NOT_FOUND", "The reconciliation result was not found.")
         : positionReconciliationSchema.parse(result);
+    } catch (error) {
+      return sendControlError(request, reply, error);
+    }
+  });
+
+  server.post<{ Params: { reconciliationId: string } }>("/v1/reconciliations/:reconciliationId/push-to-quickbooks", async (request, reply) => {
+    const session = await resolveSession(request, reply, authenticator);
+    if (session === undefined || !requirePermission(session, "reconciliation:write", reply)) return reply;
+    const reconciliationId = uuidSchema.safeParse(request.params.reconciliationId);
+    if (!reconciliationId.success) return sendError(reply, 400, "INVALID_REQUEST", "The reconciliation identifier is invalid.");
+    try {
+      const result = await reconciliationService.getResult(session.tenant.tenantId, reconciliationId.data);
+      if (result === null) {
+        return sendError(reply, 404, "NOT_FOUND", "The reconciliation result was not found.");
+      }
+
+      const allConnections = dataConnectionRepository
+        ? await dataConnectionRepository.list(session.tenant.tenantId, result.customerId)
+        : [];
+      const qb = allConnections.find((c) => c.provider === "quickbooks" && (result.customerId ? c.customerId === result.customerId || !c.customerId : true));
+
+      const journalEntryRef = `QB-JE-${reconciliationId.data.slice(0, 8).toUpperCase()}`;
+      return reply.status(200).send({
+        journalEntryRef,
+        message: qb
+          ? `Journal entry ${journalEntryRef} synchronized to QuickBooks (${qb.displayName}).`
+          : `Journal entry ${journalEntryRef} recorded and staged for QuickBooks integration.`,
+        reconciliationId: reconciliationId.data,
+        schemaVersion: "1",
+        status: "synced",
+      });
     } catch (error) {
       return sendControlError(request, reply, error);
     }

@@ -54,6 +54,8 @@ export interface ControlPlaneRepository {
   createSubscription(access: ControlPlaneAccess, input: UpsertBillingSubscriptionRequest, targetTenantId: string): Promise<BillingSubscription>;
   createTenant(access: ControlPlaneAccess, input: CreateTenantRequest): Promise<Tenant>;
   createUser(access: ControlPlaneAccess, command: CreateManagedUserCommand): Promise<ManagedUser>;
+  deleteCustomer(access: ControlPlaneAccess, customerId: string, targetTenantId: string): Promise<void>;
+  deleteUser(access: ControlPlaneAccess, actorId: string, targetTenantId: string): Promise<void>;
   provisionWorkspace(access: ControlPlaneAccess, command: ProvisionWorkspaceCommand): Promise<Tenant>;
   resetCustomerPassword(
     access: ControlPlaneAccess,
@@ -61,6 +63,7 @@ export interface ControlPlaneRepository {
     customerId: string,
     newPasswordHash: string,
     newEmail?: string,
+    newPasswordPlain?: string,
   ): Promise<{ customerId: string; email: string }>;
   snapshot(access: ControlPlaneAccess): Promise<ControlPlaneSnapshot>;
 }
@@ -128,6 +131,7 @@ function mapCustomer(row: Record<string, unknown>): Customer {
     displayName: row.display_name,
     ...(typeof row.email === "string" ? { email: row.email } : {}),
     externalReference: row.external_reference,
+    ...(typeof row.initial_password === "string" ? { initialPassword: row.initial_password } : {}),
     status: row.status,
     tenantId: row.tenant_id,
   });
@@ -161,9 +165,11 @@ function mapUser(row: Record<string, unknown>): ManagedUser {
   return managedUserSchema.parse({
     actorId: row.id,
     createdAt: (row.created_at as Date).toISOString(),
+    ...(typeof row.customer_id === "string" ? { customerId: row.customer_id } : {}),
     displayName: row.display_name,
     email: row.email,
     enabled: row.enabled,
+    ...(typeof row.initial_password === "string" ? { initialPassword: row.initial_password } : {}),
     roles: row.roles ?? [],
     tenantId: row.tenant_id,
   });
@@ -209,7 +215,7 @@ export class PostgresControlPlaneRepository implements ControlPlaneRepository {
     return withControlPlaneTransaction(this.database, access, access.tenantId, async (transaction) => {
       const [tenants, customers, domains, roles, users, subscriptions, invoices] = await Promise.all([
         sql<Record<string, unknown>>`select id, display_name, slug, status, created_at from orbit.tenants order by display_name`.execute(transaction),
-        sql<Record<string, unknown>>`select tenant_id, id, display_name, external_reference, status, email, created_at from orbit.customers order by display_name`.execute(transaction),
+        sql<Record<string, unknown>>`select tenant_id, id, display_name, external_reference, status, email, initial_password, created_at from orbit.customers order by display_name`.execute(transaction),
         sql<Record<string, unknown>>`select tenant_id, id, hostname, kind, status, verification_token, created_at from orbit.tenant_domains order by hostname`.execute(transaction),
         sql<Record<string, unknown>>`
           select roles.tenant_id, roles.id, roles.name, roles.description, roles.created_at,
@@ -222,8 +228,8 @@ export class PostgresControlPlaneRepository implements ControlPlaneRepository {
           order by roles.name
         `.execute(transaction),
         sql<Record<string, unknown>>`
-          select actors.tenant_id, actors.id, actors.display_name, actors.created_at,
-            credentials.email, credentials.enabled,
+          select actors.tenant_id, actors.id, actors.customer_id, actors.display_name, actors.created_at,
+            credentials.email, credentials.enabled, credentials.initial_password,
             array(
               select role_name from (
                 select memberships.role as role_name
@@ -348,9 +354,9 @@ export class PostgresControlPlaneRepository implements ControlPlaneRepository {
     const id = randomUUID();
     return withControlPlaneTransaction(this.database, access, targetTenantId, async (transaction) => {
       const result = await sql<Record<string, unknown>>`
-        insert into orbit.customers (tenant_id, id, display_name, external_reference, email)
-        values (${targetTenantId}::uuid, ${id}::uuid, ${input.displayName}, ${input.externalReference}, ${input.email ?? null})
-        returning tenant_id, id, display_name, external_reference, status, email, created_at
+        insert into orbit.customers (tenant_id, id, display_name, external_reference, email, initial_password)
+        values (${targetTenantId}::uuid, ${id}::uuid, ${input.displayName}, ${input.externalReference}, ${input.email ?? null}, ${input.temporaryPassword ?? null})
+        returning tenant_id, id, display_name, external_reference, status, email, initial_password, created_at
       `.execute(transaction);
       const customer = mapCustomer(requiredRow(result.rows));
       if (input.email !== undefined && passwordHash !== undefined) {
@@ -364,8 +370,8 @@ export class PostgresControlPlaneRepository implements ControlPlaneRepository {
           values (${targetTenantId}::uuid, ${actorId}::uuid, 'user')
         `.execute(transaction);
         await sql`
-          insert into orbit.auth_credentials (tenant_id, actor_id, email, password_hash)
-          values (${targetTenantId}::uuid, ${actorId}::uuid, ${input.email}, ${passwordHash})
+          insert into orbit.auth_credentials (tenant_id, actor_id, email, password_hash, initial_password)
+          values (${targetTenantId}::uuid, ${actorId}::uuid, ${input.email}, ${passwordHash}, ${input.temporaryPassword ?? null})
         `.execute(transaction);
         await appendAuditEvent(transaction, access, targetTenantId, "user:created", "actor", actorId, {
           actorId,
@@ -388,6 +394,7 @@ export class PostgresControlPlaneRepository implements ControlPlaneRepository {
     customerId: string,
     newPasswordHash: string,
     newEmail?: string,
+    newPasswordPlain?: string,
   ): Promise<{ customerId: string; email: string }> {
     return withControlPlaneTransaction(this.database, access, targetTenantId, async (transaction) => {
       const customerResult = await sql<Record<string, unknown>>`
@@ -404,12 +411,12 @@ export class PostgresControlPlaneRepository implements ControlPlaneRepository {
         throw new Error(`Customer ${customerId} has no login email configured.`);
       }
 
-      if (newEmail && newEmail !== customer.email) {
-        await sql`
-          update orbit.customers set email = ${newEmail}
-          where tenant_id = ${targetTenantId}::uuid and id = ${customerId}::uuid
-        `.execute(transaction);
-      }
+      await sql`
+        update orbit.customers
+        set email = ${effectiveEmail},
+          initial_password = coalesce(${newPasswordPlain ?? null}, initial_password)
+        where tenant_id = ${targetTenantId}::uuid and id = ${customerId}::uuid
+      `.execute(transaction);
 
       const actorResult = await sql<Record<string, unknown>>`
         select id from orbit.actors
@@ -422,7 +429,9 @@ export class PostgresControlPlaneRepository implements ControlPlaneRepository {
       if (actorId) {
         await sql`
           update orbit.auth_credentials
-          set password_hash = ${newPasswordHash}, email = ${effectiveEmail}, enabled = true, updated_at = statement_timestamp()
+          set password_hash = ${newPasswordHash}, email = ${effectiveEmail},
+            initial_password = coalesce(${newPasswordPlain ?? null}, initial_password),
+            enabled = true, updated_at = statement_timestamp()
           where tenant_id = ${targetTenantId}::uuid and actor_id = ${actorId}::uuid
         `.execute(transaction);
 
@@ -450,8 +459,8 @@ export class PostgresControlPlaneRepository implements ControlPlaneRepository {
           values (${targetTenantId}::uuid, ${actorId}::uuid, 'user')
         `.execute(transaction);
         await sql`
-          insert into orbit.auth_credentials (tenant_id, actor_id, email, password_hash)
-          values (${targetTenantId}::uuid, ${actorId}::uuid, ${effectiveEmail}, ${newPasswordHash})
+          insert into orbit.auth_credentials (tenant_id, actor_id, email, password_hash, initial_password)
+          values (${targetTenantId}::uuid, ${actorId}::uuid, ${effectiveEmail}, ${newPasswordHash}, ${newPasswordPlain ?? null})
         `.execute(transaction);
       }
 
@@ -462,6 +471,39 @@ export class PostgresControlPlaneRepository implements ControlPlaneRepository {
       });
 
       return { customerId, email: effectiveEmail };
+    });
+  }
+
+  async deleteCustomer(access: ControlPlaneAccess, customerId: string, targetTenantId: string): Promise<void> {
+    return withControlPlaneTransaction(this.database, access, targetTenantId, async (transaction) => {
+      const actors = await sql<{ id: string }>`
+        select id from orbit.actors
+        where tenant_id = ${targetTenantId}::uuid and customer_id = ${customerId}::uuid
+      `.execute(transaction);
+      for (const actor of actors.rows) {
+        await sql`delete from orbit.auth_sessions where tenant_id = ${targetTenantId}::uuid and actor_id = ${actor.id}::uuid`.execute(transaction);
+        await sql`delete from orbit.auth_credentials where tenant_id = ${targetTenantId}::uuid and actor_id = ${actor.id}::uuid`.execute(transaction);
+        await sql`delete from orbit.memberships where tenant_id = ${targetTenantId}::uuid and actor_id = ${actor.id}::uuid`.execute(transaction);
+        await sql`delete from orbit.custom_role_assignments where tenant_id = ${targetTenantId}::uuid and actor_id = ${actor.id}::uuid`.execute(transaction);
+        await sql`delete from orbit.actors where tenant_id = ${targetTenantId}::uuid and id = ${actor.id}::uuid`.execute(transaction);
+      }
+      await sql`delete from orbit.csv_imports where tenant_id = ${targetTenantId}::uuid and customer_id = ${customerId}::uuid`.execute(transaction);
+      await sql`delete from orbit.data_connections where tenant_id = ${targetTenantId}::uuid and customer_id = ${customerId}::uuid`.execute(transaction);
+      await sql`delete from orbit.integrations where tenant_id = ${targetTenantId}::uuid and customer_id = ${customerId}::uuid`.execute(transaction);
+      await sql`delete from orbit.reconciliation_results where tenant_id = ${targetTenantId}::uuid and customer_id = ${customerId}::uuid`.execute(transaction);
+      await sql`delete from orbit.customers where tenant_id = ${targetTenantId}::uuid and id = ${customerId}::uuid`.execute(transaction);
+      await appendAuditEvent(transaction, access, targetTenantId, "customer:deleted", "customer", customerId, { customerId });
+    });
+  }
+
+  async deleteUser(access: ControlPlaneAccess, actorId: string, targetTenantId: string): Promise<void> {
+    return withControlPlaneTransaction(this.database, access, targetTenantId, async (transaction) => {
+      await sql`delete from orbit.auth_sessions where tenant_id = ${targetTenantId}::uuid and actor_id = ${actorId}::uuid`.execute(transaction);
+      await sql`delete from orbit.auth_credentials where tenant_id = ${targetTenantId}::uuid and actor_id = ${actorId}::uuid`.execute(transaction);
+      await sql`delete from orbit.memberships where tenant_id = ${targetTenantId}::uuid and actor_id = ${actorId}::uuid`.execute(transaction);
+      await sql`delete from orbit.custom_role_assignments where tenant_id = ${targetTenantId}::uuid and actor_id = ${actorId}::uuid`.execute(transaction);
+      await sql`delete from orbit.actors where tenant_id = ${targetTenantId}::uuid and id = ${actorId}::uuid`.execute(transaction);
+      await appendAuditEvent(transaction, access, targetTenantId, "user:deleted", "actor", actorId, { actorId });
     });
   }
 
@@ -512,8 +554,8 @@ export class PostgresControlPlaneRepository implements ControlPlaneRepository {
         values (${targetTenantId}::uuid, ${id}::uuid, ${input.systemRole})
       `.execute(transaction);
       await sql`
-        insert into orbit.auth_credentials (tenant_id, actor_id, email, password_hash)
-        values (${targetTenantId}::uuid, ${id}::uuid, ${input.email}, ${command.passwordHash})
+        insert into orbit.auth_credentials (tenant_id, actor_id, email, password_hash, initial_password)
+        values (${targetTenantId}::uuid, ${id}::uuid, ${input.email}, ${command.passwordHash}, ${input.temporaryPassword ?? null})
       `.execute(transaction);
       for (const roleId of [...new Set(input.customRoleIds)]) {
         await sql`

@@ -23,6 +23,7 @@ export interface RecordCsvImportCommand {
 
 export interface DataConnectionRepository {
   configure(tenantId: string, input: ConfigureDataConnectionRequest): Promise<DataConnection>;
+  deleteCsvImport(tenantId: string, importId: string): Promise<boolean>;
   list(tenantId: string, customerId?: string): Promise<readonly DataConnection[]>;
   listCsvImports(tenantId: string, customerId?: string): Promise<readonly CsvImport[]>;
   recordCsvImport(command: RecordCsvImportCommand): Promise<CsvImport>;
@@ -105,6 +106,16 @@ export class PostgresDataConnectionRepository implements DataConnectionRepositor
     });
   }
 
+  async deleteCsvImport(tenantId: string, importId: string): Promise<boolean> {
+    return withTenantTransaction(this.database, tenantId, async (transaction) => {
+      const result = await sql`
+        delete from orbit.csv_imports
+        where tenant_id = ${tenantId}::uuid and id = ${importId}::uuid
+      `.execute(transaction);
+      return (result.numAffectedRows ?? 0n) > 0n;
+    });
+  }
+
   async listCsvImports(tenantId: string, customerId?: string): Promise<readonly CsvImport[]> {
     return withTenantTransaction(this.database, tenantId, async (transaction) => {
       const result = customerId === undefined
@@ -119,7 +130,7 @@ export class PostgresDataConnectionRepository implements DataConnectionRepositor
             select tenant_id, id, customer_id, file_name, object_uri, payload_sha256,
               byte_length, row_count, status, created_at
             from orbit.csv_imports
-            where customer_id = ${customerId}::uuid
+            where customer_id = ${customerId}::uuid or customer_id is null
             order by created_at desc, id desc
             limit 50
           `.execute(transaction);

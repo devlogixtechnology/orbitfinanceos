@@ -303,3 +303,25 @@ export async function controlIngestionRun(formData: FormData): Promise<never> {
   revalidatePath("/app/integrations");
   redirect("/app/integrations?updated=1");
 }
+
+export async function deleteCsvImportAction(formData: FormData): Promise<never> {
+  const importId = formData.get("importId");
+  const returnTo = formData.get("returnTo")?.toString() || "/app/integrations";
+  if (typeof importId !== "string" || !importId) {
+    redirect(`${returnTo}?error=delete-failed`);
+  }
+
+  const response = await fetchAuthorizedApi(`/v1/csv-imports/${importId}`, {
+    method: "DELETE",
+  });
+
+  if (response === null || !response.ok) {
+    redirect(`${returnTo}?error=delete-failed`);
+  }
+
+  revalidatePath("/app/integrations");
+  revalidatePath("/app/reconciliation");
+  revalidatePath("/app/overview");
+  redirect(`${returnTo}?deleted=1`);
+}
+

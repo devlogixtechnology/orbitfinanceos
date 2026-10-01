@@ -165,7 +165,11 @@ export class CsvReconciliationService {
     } = options;
 
     const imports = await dataConnectionRepository.listCsvImports(tenantId, customerId);
-    const targetImport = imports.find((item) => item.importId === importId);
+    let targetImport = imports.find((item) => item.importId === importId);
+    if (!targetImport && customerId) {
+      const fallbackImports = await dataConnectionRepository.listCsvImports(tenantId);
+      targetImport = fallbackImports.find((item) => item.importId === importId);
+    }
     if (!targetImport) {
       throw new Error(`CSV_IMPORT_NOT_FOUND: Import ${importId} does not exist for tenant.`);
     }
