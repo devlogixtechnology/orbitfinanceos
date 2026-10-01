@@ -15,6 +15,12 @@ const contentSecurityPolicy = [
 
 const nextConfig: NextConfig = {
   agentRules: false,
+  experimental: {
+    cpus: 2,
+    serverActions: {
+      bodySizeLimit: "100mb",
+    },
+  },
   ...(process.env.ORBITOS_OUTPUT_MODE === "server"
     ? {}
     : { output: "standalone" as const }),

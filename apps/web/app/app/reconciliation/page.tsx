@@ -56,15 +56,64 @@ export default async function ReconciliationPage({
       ) : null}
       {status.error !== undefined ? (
         <p className="form-error" role="alert">
-          {status.error === "fireblocks-reconciliation-failed"
-            ? "Fireblocks live reconciliation failed. Ensure the wallet address is active in Fireblocks."
-            : status.error === "csv-reconciliation-failed"
-              ? "CSV reconciliation could not be processed. Verify the file records."
-              : status.error === "csv-invalid"
-                ? "Invalid CSV import reference."
-                : "Reconciliation run encountered an error."}
+          {status.error === "csv-empty"
+            ? "CSV REJECTED: The uploaded CSV file contains no valid transactions or data rows. Real data is required."
+            : status.error === "fireblocks-reconciliation-failed"
+              ? "Fireblocks live reconciliation failed. Ensure the wallet address is active in Fireblocks."
+              : status.error === "csv-reconciliation-failed"
+                ? "CSV reconciliation could not be processed. Verify the file records."
+                : status.error === "csv-invalid"
+                  ? "Invalid CSV import reference."
+                  : "Reconciliation run encountered an error."}
         </p>
       ) : null}
+
+      <div style={{
+        background: "var(--color-surface)",
+        border: "1px solid var(--color-border)",
+        borderRadius: "10px",
+        padding: "16px 20px",
+        marginBottom: "24px",
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+        gap: "14px",
+      }}>
+        <div style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
+          <span style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)", fontWeight: 800, padding: "2px 8px", borderRadius: "4px", fontSize: "0.75rem" }}>01</span>
+          <div>
+            <strong style={{ fontSize: "0.82rem", display: "block", color: "var(--color-text-primary)" }}>Wallet Discovery</strong>
+            <span style={{ fontSize: "0.74rem", color: "var(--color-text-secondary)" }}>Auto-detects source and destination addresses</span>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
+          <span style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)", fontWeight: 800, padding: "2px 8px", borderRadius: "4px", fontSize: "0.75rem" }}>02</span>
+          <div>
+            <strong style={{ fontSize: "0.82rem", display: "block", color: "var(--color-text-primary)" }}>Inflows &amp; Outflows</strong>
+            <span style={{ fontSize: "0.74rem", color: "var(--color-text-secondary)" }}>Calculates gross atomic credits and debits</span>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
+          <span style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)", fontWeight: 800, padding: "2px 8px", borderRadius: "4px", fontSize: "0.75rem" }}>03</span>
+          <div>
+            <strong style={{ fontSize: "0.82rem", display: "block", color: "var(--color-text-primary)" }}>Inter-Wallet Isolation</strong>
+            <span style={{ fontSize: "0.74rem", color: "var(--color-text-secondary)" }}>Flags internal transfers between company wallets</span>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
+          <span style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)", fontWeight: 800, padding: "2px 8px", borderRadius: "4px", fontSize: "0.75rem" }}>04</span>
+          <div>
+            <strong style={{ fontSize: "0.82rem", display: "block", color: "var(--color-text-primary)" }}>On-Chain Verification</strong>
+            <span style={{ fontSize: "0.74rem", color: "var(--color-text-secondary)" }}>Traces txHashes against 22+ network scanners</span>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
+          <span style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)", fontWeight: 800, padding: "2px 8px", borderRadius: "4px", fontSize: "0.75rem" }}>05</span>
+          <div>
+            <strong style={{ fontSize: "0.82rem", display: "block", color: "var(--color-text-primary)" }}>As-At Position Balance</strong>
+            <span style={{ fontSize: "0.74rem", color: "var(--color-text-secondary)" }}>Opening + Inflows − Outflows audit result</span>
+          </div>
+        </div>
+      </div>
 
       {!isCustomer && snapshot?.customers && snapshot.customers.length > 0 ? (
         <div className="control-panel" style={{ marginBottom: "24px", padding: "16px 20px" }}>

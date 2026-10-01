@@ -48,6 +48,16 @@ export function ApplicationShell({
           <span className="environment-label">Staging</span>
         </Link>
 
+        <div style={{ padding: "10px 16px", margin: "4px 16px 16px", background: "var(--color-accent-soft)", borderRadius: "8px", border: "1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)" }}>
+          <span style={{ fontSize: "0.68rem", textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--color-accent)", fontWeight: 700, display: "block" }}>Company</span>
+          <strong style={{ fontSize: "0.92rem", color: "var(--color-text-primary)", wordBreak: "break-word", display: "block" }}>{session.tenant.displayName}</strong>
+          {session.actor.customerId ? (
+            <span style={{ display: "inline-block", marginTop: "4px", fontSize: "0.68rem", background: "var(--color-analytic-soft)", color: "var(--color-analytic)", padding: "1px 6px", borderRadius: "4px", fontWeight: 600 }}>
+              Customer Portal
+            </span>
+          ) : null}
+        </div>
+
         <PrimaryNavigation permissions={session.permissions} />
 
         <div className="sidebar-foot">
@@ -69,13 +79,20 @@ export function ApplicationShell({
         <header className="topbar">
           <div className="topbar-context">
             <span className="environment-dot" />
-            <span>Staging control plane</span>
+            <strong style={{ fontSize: "0.92rem", color: "var(--color-text-primary)", fontWeight: 700 }}>
+              {session.tenant.displayName}
+            </strong>
             <span aria-hidden="true" className="topbar-divider">/</span>
-            <strong>{session.roles.includes("super_admin") ? "Platform authority" : "Company workspace"}</strong>
+            <span style={{ color: "var(--color-text-secondary)", fontSize: "0.82rem" }}>
+              {session.roles.includes("super_admin") ? "Platform authority" : session.actor.customerId ? "Customer Portal" : "Workspace Control"}
+            </span>
           </div>
           <div className="topbar-identity">
             <CheckCircle aria-hidden="true" color="var(--color-success)" size={18} weight="fill" />
-            <span className="topbar-actor">{displayActor(session.actor.subject)}</span>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.25 }}>
+              <span className="topbar-actor" style={{ fontWeight: 600 }}>{displayActor(session.actor.subject)}</span>
+              <span style={{ fontSize: "0.72rem", color: "var(--color-text-secondary)" }}>{session.tenant.displayName}</span>
+            </div>
           </div>
         </header>
         {children}

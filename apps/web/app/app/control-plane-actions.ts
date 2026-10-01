@@ -132,3 +132,31 @@ export async function createInvoice(formData: FormData): Promise<never> {
   if (!input.success) redirect("/app/billing?error=invalid");
   return postControlPlane("/v1/control-plane/invoices", input.data, "/app/billing");
 }
+
+export async function resetCustomerPasswordAction(formData: FormData): Promise<never> {
+  const customerId = formData.get("customerId");
+  const newPassword = formData.get("newPassword");
+  const email = optionalString(formData.get("email"));
+
+  if (typeof customerId !== "string" || !customerId || typeof newPassword !== "string" || newPassword.length < 12) {
+    redirect("/app/customers?error=password-invalid");
+  }
+
+  const response = await fetchAuthorizedApi(`/v1/control-plane/customers/${customerId}/reset-password`, {
+    body: JSON.stringify({
+      newPassword,
+      ...(email ? { email } : {}),
+      schemaVersion: "1",
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+
+  if (response === null || !response.ok) {
+    redirect("/app/customers?error=reset-failed");
+  }
+
+  revalidatePath("/app/customers");
+  redirect("/app/customers?reset=1");
+}
+

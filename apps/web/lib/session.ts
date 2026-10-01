@@ -15,10 +15,12 @@ import {
   verificationDecisionListSchema,
   exceptionWorkflowEventListSchema,
   fireblocksWalletListSchema,
+  networkScannerInfoListSchema,
   type Integration,
   type CsvImport,
   type DataConnection,
   type FireblocksWallet,
+  type NetworkScannerInfo,
   type ControlPlaneSnapshot,
   type IngestionRun,
   type CanonicalChainMovement,
@@ -177,3 +179,11 @@ export async function loadExceptionEvents(exceptionId: string): Promise<readonly
   const parsed = exceptionWorkflowEventListSchema.safeParse(await response.json());
   return parsed.success ? parsed.data.data : null;
 }
+
+export async function loadSupportedScanners(): Promise<readonly NetworkScannerInfo[]> {
+  const response = await fetchAuthorizedApi("/v1/data-connections/scanners/supported");
+  if (response === null || !response.ok) return [];
+  const parsed = networkScannerInfoListSchema.safeParse(await response.json());
+  return parsed.success ? parsed.data.data : [];
+}
+

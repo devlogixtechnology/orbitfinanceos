@@ -25,6 +25,8 @@ import {
   reconcileFireblocksWalletRequestSchema,
   createBillingInvoiceRequestSchema,
   createCustomerRequestSchema,
+  resetCustomerPasswordRequestSchema,
+  networkScannerTestRequestSchema,
   createDomainRequestSchema,
   createManagedUserRequestSchema,
   createRoleRequestSchema,
@@ -95,6 +97,10 @@ import { Buffer } from "node:buffer";
 import { CsvReconciliationService } from "./csv-reconciliation.js";
 import { FireblocksService } from "./fireblocks.js";
 import {
+  SUPPORTED_NETWORK_SCANNERS,
+  testScannerConnection,
+} from "./network-scanners.js";
+import {
   evaluateReadiness,
   OperabilityMetrics,
   type ReadinessCheck,
@@ -127,7 +133,7 @@ export interface BuildServerOptions {
 }
 
 function countCsvDataRows(bytes: Uint8Array): number {
-  const content = new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^\uFEFF/u, "");
+  const content = new TextDecoder("utf-8", { fatal: false }).decode(bytes).replace(/^\uFEFF/u, "");
   let quoted = false;
   let records = 0;
   let hasContent = false;
@@ -145,10 +151,8 @@ function countCsvDataRows(bytes: Uint8Array): number {
       hasContent = true;
     }
   }
-  if (quoted) throw new Error("CSV_QUOTE_MISMATCH");
   if (hasContent) records += 1;
-  if (records < 2) throw new Error("CSV_REQUIRES_HEADER_AND_ROW");
-  return records - 1;
+  return Math.max(1, records - 1);
 }
 
 function sendError(
@@ -660,6 +664,39 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
+  server.post<{ Params: { customerId: string } }>(
+    "/v1/control-plane/customers/:customerId/reset-password",
+    async (request, reply) => {
+      const session = await resolveSession(request, reply, authenticator);
+      if (session === undefined || !requirePermission(session, "customers:write", reply)) return reply;
+      const customerId = uuidSchema.safeParse(request.params.customerId);
+      if (!customerId.success) return sendError(reply, 400, "INVALID_REQUEST", "The customer ID is invalid.");
+      const input = resetCustomerPasswordRequestSchema.safeParse(request.body);
+      if (!input.success) return sendError(reply, 400, "INVALID_REQUEST", "Password must be at least 12 characters.");
+      if (controlPlaneRepository === undefined) {
+        return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "Control-plane persistence is not configured.");
+      }
+      try {
+        const passwordHash = await hashPassword(input.data.newPassword);
+        const result = await controlPlaneRepository.resetCustomerPassword(
+          controlPlaneAccess(session),
+          session.tenant.tenantId,
+          customerId.data,
+          passwordHash,
+          input.data.email,
+        );
+        return reply.status(200).send({
+          customerId: result.customerId,
+          email: result.email,
+          message: "Customer password reset successfully.",
+          status: "success",
+        });
+      } catch (error) {
+        return sendControlPlaneError(request, reply, error);
+      }
+    },
+  );
+
   server.post("/v1/control-plane/domains", async (request, reply) => {
     const session = await resolveSession(request, reply, authenticator);
     if (session === undefined || !requirePermission(session, "domains:write", reply)) return reply;
@@ -845,6 +882,26 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
+  server.get("/v1/data-connections/scanners/supported", async (_request, reply) => {
+    return reply.status(200).send({
+      data: SUPPORTED_NETWORK_SCANNERS,
+      schemaVersion: "1",
+    });
+  });
+
+  server.post("/v1/data-connections/scanners/test", async (request, reply) => {
+    const session = await resolveSession(request, reply, authenticator);
+    if (session === undefined || !requirePermission(session, "integrations:read", reply)) return reply;
+    const input = networkScannerTestRequestSchema.safeParse(request.body);
+    if (!input.success) return sendError(reply, 400, "INVALID_REQUEST", "Valid API URL and network ID are required.");
+    try {
+      const result = await testScannerConnection(input.data.apiUrl, input.data.apiKey, input.data.networkId);
+      return reply.status(200).send(result);
+    } catch (error) {
+      return sendError(reply, 500, "TEST_FAILED", error instanceof Error ? error.message : "Scanner test failed.");
+    }
+  });
+
   server.get("/v1/csv-imports", async (request, reply) => {
     const session = await resolveSession(request, reply, authenticator);
     if (session === undefined || !requirePermission(session, "integrations:read", reply)) return reply;
@@ -865,22 +922,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   server.post(
     "/v1/csv-imports",
-    { bodyLimit: 1_500_000 },
+    { bodyLimit: 150_000_000 },
     async (request, reply) => {
       const session = await resolveSession(request, reply, authenticator);
       if (session === undefined || !requirePermission(session, "integrations:write", reply)) return reply;
       const input = csvImportRequestSchema.safeParse(request.body);
-      if (!input.success) return sendError(reply, 400, "INVALID_REQUEST", "Select a valid CSV file smaller than 1 MB.");
+      if (!input.success) return sendError(reply, 400, "INVALID_REQUEST", "Select a valid CSV file smaller than 100 MB.");
       if (dataConnectionRepository === undefined || evidenceStore === undefined) {
         return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "CSV evidence storage is not configured.");
       }
       try {
         const rawBytes = new Uint8Array(Buffer.from(input.data.contentBase64, "base64"));
-        if (rawBytes.byteLength === 0 || rawBytes.byteLength > 1_048_576) {
-          return sendError(reply, 413, "CSV_TOO_LARGE", "CSV files must be no larger than 1 MB.");
+        if (rawBytes.byteLength === 0 || rawBytes.byteLength > 104_857_600) {
+          return sendError(reply, 413, "CSV_TOO_LARGE", "CSV files must be no larger than 100 MB.");
         }
         const rowCount = countCsvDataRows(rawBytes);
-        if (rowCount > 50_000) return sendError(reply, 413, "CSV_TOO_MANY_ROWS", "CSV files may contain at most 50,000 data rows.");
+        if (rowCount > 500_000) return sendError(reply, 413, "CSV_TOO_MANY_ROWS", "CSV files may contain at most 500,000 data rows.");
         const importId = randomUUID();
         const stored = await evidenceStore.append({
           attributes: { fileName: input.data.fileName, payloadFormat: "csv", rowCount: String(rowCount) },

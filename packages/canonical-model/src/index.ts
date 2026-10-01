@@ -138,10 +138,15 @@ export const updateIntegrationRequestSchema = z
   .strict()
   .refine((value) => Object.keys(value).length > 0, "At least one field is required");
 
-export const dataConnectionProviderSchema = z.enum(["quickbooks", "fireblocks"]);
+export const dataConnectionProviderSchema = z.enum([
+  "quickbooks",
+  "fireblocks",
+  "network_scanner",
+  "company_wallet",
+]);
 const dataConnectionPublicConfigurationSchema = z
-  .record(z.string().min(1).max(60), z.string().trim().min(1).max(500))
-  .refine((value) => Object.keys(value).length <= 12, "Too many connection settings");
+  .record(z.string().min(1).max(60), z.string().trim().max(1000))
+  .refine((value) => Object.keys(value).length <= 20, "Too many connection settings");
 export const configureDataConnectionRequestSchema = z
   .object({
     customerId: uuidSchema.optional(),
@@ -149,7 +154,7 @@ export const configureDataConnectionRequestSchema = z
     provider: dataConnectionProviderSchema,
     publicConfiguration: dataConnectionPublicConfigurationSchema,
     schemaVersion: z.literal("1"),
-    secretReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{2,199}$/u),
+    secretReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/u),
   })
   .strict();
 export const dataConnectionSchema = z
@@ -172,7 +177,7 @@ export const dataConnectionListSchema = z
 
 export const csvImportRequestSchema = z
   .object({
-    contentBase64: z.string().min(4).max(1_400_000).regex(/^[A-Za-z0-9+/]+={0,2}$/u),
+    contentBase64: z.string().min(4).max(150_000_000).regex(/^[A-Za-z0-9+/]+={0,2}$/u),
     customerId: uuidSchema.optional(),
     fileName: z
       .string()
@@ -699,6 +704,15 @@ export const createCustomerRequestSchema = optionalTargetTenantSchema
   })
   .strict();
 
+export const resetCustomerPasswordRequestSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().pipe(z.email()).optional(),
+    newPassword: z.string().min(12).max(128),
+    schemaVersion: z.literal("1"),
+  })
+  .strict();
+export type ResetCustomerPasswordRequest = z.infer<typeof resetCustomerPasswordRequestSchema>;
+
 export const createDomainRequestSchema = optionalTargetTenantSchema
   .extend({
     hostname: z
@@ -959,3 +973,43 @@ export const reconcileCsvRequestSchema = z
   })
   .strict();
 export type ReconcileCsvRequest = z.infer<typeof reconcileCsvRequestSchema>;
+
+export const networkScannerTestRequestSchema = z
+  .object({
+    apiKey: z.string().trim().max(200).optional(),
+    apiUrl: z.string().trim().min(5).max(500),
+    networkId: z.string().trim().min(1).max(60),
+    schemaVersion: z.literal("1").default("1"),
+  })
+  .strict();
+export type NetworkScannerTestRequest = z.infer<typeof networkScannerTestRequestSchema>;
+
+export const companyWalletSchema = z
+  .object({
+    address: z.string().min(1),
+    customerId: uuidSchema.optional(),
+    label: z.string().min(1).max(100),
+    network: z.string().min(1).max(50),
+    schemaVersion: z.literal("1").default("1"),
+    walletId: uuidSchema,
+  })
+  .strict();
+export type CompanyWallet = z.infer<typeof companyWalletSchema>;
+
+export const networkScannerInfoSchema = z
+  .object({
+    category: z.enum(["EVM", "UTXO", "SVM", "TVM"]),
+    chainId: z.string().optional(),
+    defaultApiUrl: z.string().min(1),
+    docsUrl: z.string().min(1),
+    explorerUrl: z.string().min(1),
+    id: z.string().min(1),
+    name: z.string().min(1),
+    nativeAsset: z.string().min(1),
+  })
+  .strict();
+export const networkScannerInfoListSchema = z
+  .object({ data: z.array(networkScannerInfoSchema), schemaVersion: z.literal("1") })
+  .strict();
+export type NetworkScannerInfo = z.infer<typeof networkScannerInfoSchema>;
+

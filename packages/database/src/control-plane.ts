@@ -55,6 +55,13 @@ export interface ControlPlaneRepository {
   createTenant(access: ControlPlaneAccess, input: CreateTenantRequest): Promise<Tenant>;
   createUser(access: ControlPlaneAccess, command: CreateManagedUserCommand): Promise<ManagedUser>;
   provisionWorkspace(access: ControlPlaneAccess, command: ProvisionWorkspaceCommand): Promise<Tenant>;
+  resetCustomerPassword(
+    access: ControlPlaneAccess,
+    targetTenantId: string,
+    customerId: string,
+    newPasswordHash: string,
+    newEmail?: string,
+  ): Promise<{ customerId: string; email: string }>;
   snapshot(access: ControlPlaneAccess): Promise<ControlPlaneSnapshot>;
 }
 
@@ -372,6 +379,89 @@ export class PostgresControlPlaneRepository implements ControlPlaneRepository {
       }
       await appendAuditEvent(transaction, access, targetTenantId, "customer:created", "customer", id, customer);
       return customer;
+    });
+  }
+
+  async resetCustomerPassword(
+    access: ControlPlaneAccess,
+    targetTenantId: string,
+    customerId: string,
+    newPasswordHash: string,
+    newEmail?: string,
+  ): Promise<{ customerId: string; email: string }> {
+    return withControlPlaneTransaction(this.database, access, targetTenantId, async (transaction) => {
+      const customerResult = await sql<Record<string, unknown>>`
+        select id, display_name, email from orbit.customers
+        where tenant_id = ${targetTenantId}::uuid and id = ${customerId}::uuid
+      `.execute(transaction);
+      const customer = customerResult.rows[0];
+      if (!customer) {
+        throw new Error(`Customer ${customerId} was not found.`);
+      }
+
+      const effectiveEmail = newEmail ?? (customer.email as string | undefined);
+      if (!effectiveEmail) {
+        throw new Error(`Customer ${customerId} has no login email configured.`);
+      }
+
+      if (newEmail && newEmail !== customer.email) {
+        await sql`
+          update orbit.customers set email = ${newEmail}
+          where tenant_id = ${targetTenantId}::uuid and id = ${customerId}::uuid
+        `.execute(transaction);
+      }
+
+      const actorResult = await sql<Record<string, unknown>>`
+        select id from orbit.actors
+        where tenant_id = ${targetTenantId}::uuid and customer_id = ${customerId}::uuid
+        limit 1
+      `.execute(transaction);
+
+      let actorId = actorResult.rows[0]?.id as string | undefined;
+
+      if (actorId) {
+        await sql`
+          update orbit.auth_credentials
+          set password_hash = ${newPasswordHash}, email = ${effectiveEmail}, enabled = true, updated_at = statement_timestamp()
+          where tenant_id = ${targetTenantId}::uuid and actor_id = ${actorId}::uuid
+        `.execute(transaction);
+
+        if (newEmail) {
+          await sql`
+            update orbit.actors
+            set external_subject = ${`password:${effectiveEmail}`}
+            where tenant_id = ${targetTenantId}::uuid and id = ${actorId}::uuid
+          `.execute(transaction);
+        }
+
+        await sql`
+          update orbit.auth_sessions
+          set revoked_at = statement_timestamp()
+          where tenant_id = ${targetTenantId}::uuid and actor_id = ${actorId}::uuid and revoked_at is null
+        `.execute(transaction);
+      } else {
+        actorId = randomUUID();
+        await sql`
+          insert into orbit.actors (tenant_id, id, external_subject, display_name, customer_id)
+          values (${targetTenantId}::uuid, ${actorId}::uuid, ${`password:${effectiveEmail}`}, ${customer.display_name}, ${customerId}::uuid)
+        `.execute(transaction);
+        await sql`
+          insert into orbit.memberships (tenant_id, actor_id, role)
+          values (${targetTenantId}::uuid, ${actorId}::uuid, 'user')
+        `.execute(transaction);
+        await sql`
+          insert into orbit.auth_credentials (tenant_id, actor_id, email, password_hash)
+          values (${targetTenantId}::uuid, ${actorId}::uuid, ${effectiveEmail}, ${newPasswordHash})
+        `.execute(transaction);
+      }
+
+      await appendAuditEvent(transaction, access, targetTenantId, "customer:password_reset", "customer", customerId, {
+        customerId,
+        email: effectiveEmail,
+        updatedAt: new Date().toISOString(),
+      });
+
+      return { customerId, email: effectiveEmail };
     });
   }
 

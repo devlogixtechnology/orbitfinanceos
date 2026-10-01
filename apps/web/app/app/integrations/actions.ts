@@ -62,7 +62,7 @@ export async function configureDataConnection(formData: FormData): Promise<never
 
 export async function uploadCsvImport(formData: FormData): Promise<never> {
   const candidate = formData.get("csvFile");
-  if (!(candidate instanceof File) || candidate.size === 0 || candidate.size > 1_048_576) {
+  if (!(candidate instanceof File) || candidate.size === 0 || candidate.size > 104_857_600) {
     redirect("/app/integrations?error=csv-invalid");
   }
   const customerId = optionalString(formData.get("customerId"));
@@ -79,28 +79,118 @@ export async function uploadCsvImport(formData: FormData): Promise<never> {
     headers: { "content-type": "application/json" },
     method: "POST",
   });
-  if (response === null || !response.ok) redirect("/app/integrations?error=csv-unavailable");
+  if (response === null || !response.ok) {
+    if (response) {
+      try {
+        const errorJson = (await response.json()) as { code?: string };
+        if (errorJson?.code === "EMPTY_CSV") {
+          redirect("/app/integrations?error=csv-empty");
+        }
+      } catch (err) {
+        if (err instanceof Error && err.message === "NEXT_REDIRECT") throw err;
+      }
+    }
+    redirect("/app/integrations?error=csv-unavailable");
+  }
   
+  let importIdToReconcile: string | undefined;
   if (shouldReconcile) {
     try {
       const importedData = (await response.json()) as { importId: string };
-      if (importedData?.importId) {
-        await fetchAuthorizedApi(`/v1/csv-imports/${importedData.importId}/reconcile`, {
-          body: JSON.stringify({ ...(customerId ? { customerId } : {}) }),
-          headers: { "content-type": "application/json" },
-          method: "POST",
-        });
-        revalidatePath("/app/reconciliation");
-        revalidatePath("/app/integrations");
-        redirect("/app/reconciliation?reconciled=1");
-      }
+      importIdToReconcile = importedData?.importId;
     } catch {
       // If reading json fails, fall through
     }
   }
 
+  if (importIdToReconcile) {
+    const reconRes = await fetchAuthorizedApi(`/v1/csv-imports/${importIdToReconcile}/reconcile`, {
+      body: JSON.stringify({ ...(customerId ? { customerId } : {}) }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+    if (reconRes !== null && !reconRes.ok) {
+      try {
+        const errData = (await reconRes.json()) as { code?: string };
+        if (errData?.code === "EMPTY_CSV") {
+          redirect("/app/integrations?error=csv-empty");
+        }
+      } catch (err) {
+        if (err instanceof Error && err.message === "NEXT_REDIRECT") throw err;
+      }
+      redirect("/app/integrations?error=reconciliation-failed");
+    }
+    revalidatePath("/app/reconciliation");
+    revalidatePath("/app/integrations");
+    redirect("/app/reconciliation?reconciled=1");
+  }
+
   revalidatePath("/app/integrations");
   redirect("/app/integrations?imported=1");
+}
+
+export async function configureNetworkScanner(formData: FormData): Promise<never> {
+  const customerId = optionalString(formData.get("customerId"));
+  const scannerId = formData.get("scannerId")?.toString().trim() ?? "";
+  const displayName = formData.get("displayName")?.toString().trim() ?? `Scanner (${scannerId})`;
+  const apiUrl = formData.get("apiUrl")?.toString().trim() ?? "";
+  const apiKey = formData.get("apiKey")?.toString().trim() ?? "";
+  const explorerUrl = formData.get("explorerUrl")?.toString().trim() ?? "";
+
+  const input = configureDataConnectionRequestSchema.safeParse({
+    ...(customerId ? { customerId } : {}),
+    displayName,
+    provider: "network_scanner",
+    publicConfiguration: {
+      apiUrl,
+      explorerUrl,
+      scannerId,
+    },
+    schemaVersion: "1",
+    secretReference: apiKey || "none",
+  });
+  if (!input.success) redirect("/app/integrations?error=connection-invalid");
+  const response = await fetchAuthorizedApi("/v1/data-connections", {
+    body: JSON.stringify(input.data),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (response === null || !response.ok) redirect("/app/integrations?error=connection-unavailable");
+  revalidatePath("/app/integrations");
+  redirect("/app/integrations?connected=scanner");
+}
+
+export async function configureCompanyWallet(formData: FormData): Promise<never> {
+  const customerId = optionalString(formData.get("customerId"));
+  const label = formData.get("label")?.toString().trim() ?? "Company Wallet";
+  const address = formData.get("address")?.toString().trim().toLowerCase() ?? "";
+  const network = formData.get("network")?.toString().trim() ?? "ethereum";
+
+  if (!address.startsWith("0x") || address.length < 10) {
+    redirect("/app/integrations?error=wallet-invalid");
+  }
+
+  const input = configureDataConnectionRequestSchema.safeParse({
+    ...(customerId ? { customerId } : {}),
+    displayName: `${label} (${address.slice(0, 6)}...${address.slice(-4)})`,
+    provider: "company_wallet",
+    publicConfiguration: {
+      address,
+      label,
+      network,
+    },
+    schemaVersion: "1",
+    secretReference: "internal-company-wallet",
+  });
+  if (!input.success) redirect("/app/integrations?error=connection-invalid");
+  const response = await fetchAuthorizedApi("/v1/data-connections", {
+    body: JSON.stringify(input.data),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (response === null || !response.ok) redirect("/app/integrations?error=connection-unavailable");
+  revalidatePath("/app/integrations");
+  redirect("/app/integrations?connected=wallet");
 }
 
 export async function reconcileCsvImport(formData: FormData): Promise<never> {

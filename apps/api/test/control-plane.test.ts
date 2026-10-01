@@ -36,6 +36,7 @@ const repository = {
   createTenant,
   createUser: vi.fn<ControlPlaneRepository["createUser"]>(),
   provisionWorkspace,
+  resetCustomerPassword: vi.fn<ControlPlaneRepository["resetCustomerPassword"]>(),
   snapshot: vi.fn<ControlPlaneRepository["snapshot"]>(),
 } satisfies ControlPlaneRepository;
 
@@ -134,5 +135,27 @@ describe("reseller control-plane authorization", () => {
 
     expect(response.statusCode).toBe(403);
     expect(response.json()).toMatchObject({ error: { code: "PERMISSION_DENIED" } });
+  });
+
+  it("resets a customer password when authorized", async () => {
+    const authenticator: SessionAuthenticator = { authenticate: () => Promise.resolve(session("super_admin")) };
+    const resetMock = vi.fn().mockResolvedValue({ customerId: "11111111-1111-4111-8111-111111111111", email: "client@example.com" });
+    const repoWithReset = { ...repository, resetCustomerPassword: resetMock };
+    const server = buildServer({ authenticator, controlPlaneRepository: repoWithReset });
+    servers.add(server);
+
+    const response = await server.inject({
+      headers: { authorization: "Bearer valid" },
+      method: "POST",
+      payload: {
+        newPassword: "secure-new-password-2026",
+        schemaVersion: "1",
+      },
+      url: "/v1/control-plane/customers/11111111-1111-4111-8111-111111111111/reset-password",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ status: "success" });
+    expect(resetMock).toHaveBeenCalled();
   });
 });

@@ -21,6 +21,9 @@
   --color-accent-soft: rgb(8 124 158 / 0.1);
   --color-analytic-soft: rgb(101 84 217 / 0.1);
   --color-shadow: rgb(71 85 105 / 0.16);
+  --color-foreground: var(--color-text-primary);
+  --color-muted: var(--color-text-secondary);
+  --color-surface-subtle: var(--color-background-subtle);
 }
 
 :root[data-theme="dark"] {
@@ -45,6 +48,9 @@
   --color-accent-soft: rgb(76 201 240 / 0.12);
   --color-analytic-soft: rgb(149 135 248 / 0.12);
   --color-shadow: rgb(2 6 15 / 0.48);
+  --color-foreground: var(--color-text-primary);
+  --color-muted: var(--color-text-secondary);
+  --color-surface-subtle: var(--color-background-subtle);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -70,6 +76,9 @@
     --color-accent-soft: rgb(76 201 240 / 0.12);
     --color-analytic-soft: rgb(149 135 248 / 0.12);
     --color-shadow: rgb(2 6 15 / 0.48);
+    --color-foreground: var(--color-text-primary);
+    --color-muted: var(--color-text-secondary);
+    --color-surface-subtle: var(--color-background-subtle);
   }
 }
 
@@ -2209,9 +2218,11 @@ th {
 }
 
 .source-card-grid {
+  background: var(--color-border);
   border: 1px solid var(--color-border);
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   margin-top: 18px;
 }
 
@@ -2222,10 +2233,6 @@ th {
   gap: 22px;
   min-width: 0;
   padding: 24px;
-}
-
-.source-card + .source-card {
-  border-left: 1px solid var(--color-border);
 }
 
 .source-card-ready {
@@ -2275,14 +2282,68 @@ th {
 }
 
 .source-connect-form label {
+  color: var(--color-text-primary);
+  display: block;
   font-size: 0.78rem;
   font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.source-connect-form input,
+.source-connect-form select,
+.source-connect-form textarea {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: 0.86rem;
+  padding: 8px 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  width: 100%;
+}
+
+.source-connect-form input:focus,
+.source-connect-form select:focus,
+.source-connect-form textarea:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent-soft);
+  outline: none;
+}
+
+.source-connect-form select option {
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
 }
 
 .source-connect-form .primary-button {
   justify-content: center;
-  margin-top: 4px;
+  margin-top: 6px;
   width: 100%;
+}
+
+.scanner-badge {
+  background: var(--color-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+  border-radius: 4px;
+  color: var(--color-accent);
+  display: inline-flex;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  text-transform: uppercase;
+}
+
+.wallet-badge {
+  background: color-mix(in srgb, var(--color-analytic) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-analytic) 30%, transparent);
+  border-radius: 4px;
+  color: var(--color-analytic);
+  display: inline-flex;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 6px;
 }
 
 .source-setup {
