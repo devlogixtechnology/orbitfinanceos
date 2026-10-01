@@ -40,6 +40,10 @@ const dataConnectionsMigrationUrl = new URL(
   "../migrations/0010_data_connections.sql",
   import.meta.url,
 );
+const customerIntegrationsMigrationUrl = new URL(
+  "../migrations/0011_customer_integrations.sql",
+  import.meta.url,
+);
 
 describe("foundation migration contract", () => {
   it("declares fail-closed tenant policies and tenant-safe relationships", async () => {
@@ -162,5 +166,17 @@ describe("foundation migration contract", () => {
     expect(sql).toContain("UNIQUE (tenant_id, payload_sha256)");
     expect(sql).toContain("csv_imports_append_only");
     expect(sql).toContain("GRANT SELECT, INSERT ON orbit.csv_imports TO orbitos_app");
+  });
+
+  it("adds customer-scoped foreign keys and indexes to integrations and controls", async () => {
+    const sql = await readFile(fileURLToPath(customerIntegrationsMigrationUrl), "utf8");
+
+    expect(sql).toContain("ALTER TABLE orbit.customers\n  ADD COLUMN email text;");
+    expect(sql).toContain("ALTER TABLE orbit.actors\n  ADD COLUMN customer_id uuid");
+    expect(sql).toContain("ALTER TABLE orbit.data_connections\n  ADD COLUMN customer_id uuid");
+    expect(sql).toContain("ALTER TABLE orbit.integrations\n  ADD COLUMN customer_id uuid");
+    expect(sql).toContain("ALTER TABLE orbit.csv_imports\n  ADD COLUMN customer_id uuid");
+    expect(sql).toContain("ALTER TABLE orbit.reconciliation_results\n  ADD COLUMN customer_id uuid");
+    expect(sql).toContain("CREATE INDEX integrations_customer_idx");
   });
 });

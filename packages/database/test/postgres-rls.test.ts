@@ -73,6 +73,8 @@ describe("PostgreSQL tenant isolation", () => {
           "0007_sprint3_verification.sql",
           "0008_sprint3_reconciliation.sql",
           "0009_reseller_control_plane.sql",
+          "0010_data_connections.sql",
+          "0011_customer_integrations.sql",
         ].map((file) =>
           readFile(
             fileURLToPath(new URL(`../migrations/${file}`, import.meta.url)),

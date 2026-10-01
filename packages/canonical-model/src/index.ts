@@ -81,6 +81,7 @@ export const integrationProviderGroupSchema = z
   .strict();
 export const createIntegrationRequestSchema = z
   .object({
+    customerId: uuidSchema.optional(),
     finalityPolicyVersion: z.string().min(1),
     network: z
       .object({
@@ -99,6 +100,7 @@ export const createIntegrationRequestSchema = z
 export const integrationSchema = z
   .object({
     createdAt: utcInstantSchema,
+    customerId: uuidSchema.optional(),
     enabled: z.boolean(),
     finalityPolicyVersion: z.string().min(1),
     integrationId: uuidSchema,
@@ -142,6 +144,7 @@ const dataConnectionPublicConfigurationSchema = z
   .refine((value) => Object.keys(value).length <= 12, "Too many connection settings");
 export const configureDataConnectionRequestSchema = z
   .object({
+    customerId: uuidSchema.optional(),
     displayName: z.string().trim().min(2).max(120),
     provider: dataConnectionProviderSchema,
     publicConfiguration: dataConnectionPublicConfigurationSchema,
@@ -153,6 +156,7 @@ export const dataConnectionSchema = z
   .object({
     connectionId: uuidSchema,
     createdAt: utcInstantSchema,
+    customerId: uuidSchema.optional(),
     displayName: z.string().min(2).max(120),
     hasSecretReference: z.boolean(),
     provider: dataConnectionProviderSchema,
@@ -169,6 +173,7 @@ export const dataConnectionListSchema = z
 export const csvImportRequestSchema = z
   .object({
     contentBase64: z.string().min(4).max(1_400_000).regex(/^[A-Za-z0-9+/]+={0,2}$/u),
+    customerId: uuidSchema.optional(),
     fileName: z
       .string()
       .trim()
@@ -181,6 +186,7 @@ export const csvImportSchema = z
   .object({
     byteLength: unsignedIntegerStringSchema,
     createdAt: utcInstantSchema,
+    customerId: uuidSchema.optional(),
     fileName: z.string().min(1).max(180),
     importId: uuidSchema,
     objectUri: z.string().min(1),
@@ -402,6 +408,7 @@ export const positionReconciliationSchema = z
   .object({
     assetId: z.string().min(1),
     completedAt: utcInstantSchema,
+    customerId: uuidSchema.optional(),
     cutoff: utcInstantSchema,
     differenceAtomic: atomicAmountSchema.optional(),
     exceptionCount: unsignedIntegerStringSchema,
@@ -429,6 +436,7 @@ export const positionReconciliationListSchema = z
 export const createPositionReconciliationRequestSchema = z
   .object({
     assetId: z.string().min(1),
+    customerId: uuidSchema.optional(),
     cutoff: utcInstantSchema,
     observedClosingQuantityAtomic: atomicAmountSchema.optional(),
     openingQuantityAtomic: atomicAmountSchema,
@@ -511,6 +519,7 @@ export const sessionContextSchema = z
     actor: z
       .object({
         actorId: uuidSchema,
+        customerId: uuidSchema.optional(),
         subject: z.string().min(1),
       })
       .strict(),
@@ -568,6 +577,7 @@ export const customerSchema = z
     createdAt: utcInstantSchema,
     customerId: uuidSchema,
     displayName: z.string().min(2).max(120),
+    email: z.string().optional(),
     externalReference: z.string().min(1).max(120),
     status: tenantLifecycleSchema,
     tenantId: uuidSchema,
@@ -682,8 +692,10 @@ export const provisionWorkspaceRequestSchema = createTenantRequestSchema
 export const createCustomerRequestSchema = optionalTargetTenantSchema
   .extend({
     displayName: z.string().trim().min(2).max(120),
+    email: z.string().trim().toLowerCase().pipe(z.email()).optional(),
     externalReference: z.string().trim().min(1).max(120),
     schemaVersion: z.literal("1"),
+    temporaryPassword: z.string().min(12).max(128).optional(),
   })
   .strict();
 
@@ -905,3 +917,45 @@ export type UpdateOperationalExceptionRequest = z.infer<
   typeof updateOperationalExceptionRequestSchema
 >;
 export type ExceptionWorkflowEvent = z.infer<typeof exceptionWorkflowEventSchema>;
+
+export const fireblocksWalletSchema = z
+  .object({
+    asAt: utcInstantSchema,
+    assetId: z.string().min(1),
+    availableBalance: z.string(),
+    customerId: uuidSchema.optional(),
+    pendingBalance: z.string(),
+    schemaVersion: z.literal("1"),
+    totalBalance: z.string(),
+    vaultAccountId: z.string().min(1),
+    vaultAccountName: z.string().min(1),
+    walletAddress: z.string().min(1),
+  })
+  .strict();
+export const fireblocksWalletListSchema = z
+  .object({ data: z.array(fireblocksWalletSchema), schemaVersion: z.literal("1") })
+  .strict();
+export type FireblocksWallet = z.infer<typeof fireblocksWalletSchema>;
+
+export const reconcileFireblocksWalletRequestSchema = z
+  .object({
+    assetId: z.string().min(1),
+    customerId: uuidSchema.optional(),
+    cutoff: utcInstantSchema.optional(),
+    openingQuantityAtomic: atomicAmountSchema.default("0"),
+    policyVersion: z.string().min(1).default("bsc-v1"),
+    schemaVersion: z.literal("1"),
+    walletAddress: z.string().min(1),
+  })
+  .strict();
+export type ReconcileFireblocksWalletRequest = z.infer<typeof reconcileFireblocksWalletRequestSchema>;
+
+export const reconcileCsvRequestSchema = z
+  .object({
+    customerId: uuidSchema.optional(),
+    importId: uuidSchema.optional(),
+    policyVersion: z.string().min(1).default("bsc-v1"),
+    schemaVersion: z.literal("1").default("1"),
+  })
+  .strict();
+export type ReconcileCsvRequest = z.infer<typeof reconcileCsvRequestSchema>;

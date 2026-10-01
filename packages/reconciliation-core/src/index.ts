@@ -282,7 +282,7 @@ export interface ReconciliationQueryService {
   getResult(tenantId: string, reconciliationId: string): Promise<StoredPositionReconciliation | null>;
   listExceptionEvents(tenantId: string, exceptionId: string): Promise<readonly ExceptionWorkflowEvent[]>;
   listExceptions(tenantId: string): Promise<readonly OperationalException[]>;
-  listResults(tenantId: string): Promise<readonly StoredPositionReconciliation[]>;
+  listResults(tenantId: string, customerId?: string): Promise<readonly StoredPositionReconciliation[]>;
   updateException(command: UpdateExceptionCommand): Promise<OperationalException | null>;
 }
 
@@ -430,6 +430,7 @@ export class ExactReconciliationRunner implements ReconciliationRunner {
     const result = positionReconciliationSchema.parse({
       ...position,
       completedAt,
+      ...(command.request.customerId ? { customerId: command.request.customerId } : {}),
       exceptionCount: exceptions.length.toString(),
       ...(command.request.observedClosingQuantityAtomic === undefined
         ? {}
@@ -489,10 +490,14 @@ export class InMemoryReconciliationQueryService implements ReconciliationQuerySe
     );
   }
 
-  listResults(tenantId: string): Promise<readonly StoredPositionReconciliation[]> {
+  listResults(tenantId: string, customerId?: string): Promise<readonly StoredPositionReconciliation[]> {
     return Promise.resolve(
       [...this.results.values()]
-        .filter((item) => item.tenantId === tenantId)
+        .filter(
+          (item) =>
+            item.tenantId === tenantId &&
+            (customerId === undefined || item.customerId === customerId),
+        )
         .sort((left, right) => right.cutoff.localeCompare(left.cutoff) || left.reconciliationId.localeCompare(right.reconciliationId)),
     );
   }

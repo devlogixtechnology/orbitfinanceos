@@ -14,9 +14,11 @@ import {
   sessionContextSchema,
   verificationDecisionListSchema,
   exceptionWorkflowEventListSchema,
+  fireblocksWalletListSchema,
   type Integration,
   type CsvImport,
   type DataConnection,
+  type FireblocksWallet,
   type ControlPlaneSnapshot,
   type IngestionRun,
   type CanonicalChainMovement,
@@ -76,8 +78,9 @@ export async function loadControlPlane(): Promise<ControlPlaneSnapshot | null> {
   return parsed.success ? parsed.data : null;
 }
 
-export async function loadIntegrations(): Promise<readonly Integration[] | null> {
-  const response = await fetchAuthorizedApi("/v1/integrations");
+export async function loadIntegrations(customerId?: string): Promise<readonly Integration[] | null> {
+  const query = customerId ? `?customerId=${encodeURIComponent(customerId)}` : "";
+  const response = await fetchAuthorizedApi(`/v1/integrations${query}`);
   if (response === null || !response.ok) {
     return null;
   }
@@ -86,15 +89,25 @@ export async function loadIntegrations(): Promise<readonly Integration[] | null>
   return parsed.success ? parsed.data.data : null;
 }
 
-export async function loadDataConnections(): Promise<readonly DataConnection[] | null> {
-  const response = await fetchAuthorizedApi("/v1/data-connections");
+export async function loadDataConnections(customerId?: string): Promise<readonly DataConnection[] | null> {
+  const query = customerId ? `?customerId=${encodeURIComponent(customerId)}` : "";
+  const response = await fetchAuthorizedApi(`/v1/data-connections${query}`);
   if (response === null || !response.ok) return null;
   const parsed = dataConnectionListSchema.safeParse(await response.json());
   return parsed.success ? parsed.data.data : null;
 }
 
-export async function loadCsvImports(): Promise<readonly CsvImport[] | null> {
-  const response = await fetchAuthorizedApi("/v1/csv-imports");
+export async function loadFireblocksWallets(customerId?: string): Promise<readonly FireblocksWallet[] | null> {
+  const query = customerId ? `?customerId=${encodeURIComponent(customerId)}` : "";
+  const response = await fetchAuthorizedApi(`/v1/data-connections/fireblocks/wallets${query}`);
+  if (response === null || !response.ok) return null;
+  const parsed = fireblocksWalletListSchema.safeParse(await response.json());
+  return parsed.success ? parsed.data.data : null;
+}
+
+export async function loadCsvImports(customerId?: string): Promise<readonly CsvImport[] | null> {
+  const query = customerId ? `?customerId=${encodeURIComponent(customerId)}` : "";
+  const response = await fetchAuthorizedApi(`/v1/csv-imports${query}`);
   if (response === null || !response.ok) return null;
   const parsed = csvImportListSchema.safeParse(await response.json());
   return parsed.success ? parsed.data.data : null;
@@ -129,8 +142,9 @@ export async function loadVerificationDecisions(
   return parsed.success ? parsed.data.data : null;
 }
 
-export async function loadReconciliations(): Promise<readonly PositionReconciliation[] | null> {
-  const response = await fetchAuthorizedApi("/v1/reconciliations");
+export async function loadReconciliations(customerId?: string): Promise<readonly PositionReconciliation[] | null> {
+  const query = customerId ? `?customerId=${encodeURIComponent(customerId)}` : "";
+  const response = await fetchAuthorizedApi(`/v1/reconciliations${query}`);
   if (response === null || !response.ok) return null;
   const parsed = positionReconciliationListSchema.safeParse(await response.json());
   return parsed.success ? parsed.data.data : null;

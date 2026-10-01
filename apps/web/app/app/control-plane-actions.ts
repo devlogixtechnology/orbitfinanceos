@@ -53,8 +53,10 @@ export async function createTenant(formData: FormData): Promise<never> {
 export async function createCustomer(formData: FormData): Promise<never> {
   const input = createCustomerRequestSchema.safeParse({
     displayName: formData.get("displayName"),
+    email: optionalString(formData.get("email")),
     externalReference: formData.get("externalReference"),
     schemaVersion: "1",
+    temporaryPassword: optionalString(formData.get("temporaryPassword")),
     tenantId: optionalString(formData.get("tenantId")),
   });
   if (!input.success) redirect("/app/customers?error=invalid");

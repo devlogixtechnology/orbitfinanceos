@@ -20,6 +20,9 @@ import {
   csvImportSchema,
   dataConnectionListSchema,
   dataConnectionSchema,
+  fireblocksWalletListSchema,
+  reconcileCsvRequestSchema,
+  reconcileFireblocksWalletRequestSchema,
   createBillingInvoiceRequestSchema,
   createCustomerRequestSchema,
   createDomainRequestSchema,
@@ -89,6 +92,8 @@ import Fastify, {
 import { randomUUID } from "node:crypto";
 import { Buffer } from "node:buffer";
 
+import { CsvReconciliationService } from "./csv-reconciliation.js";
+import { FireblocksService } from "./fireblocks.js";
 import {
   evaluateReadiness,
   OperabilityMetrics,
@@ -102,8 +107,10 @@ export interface BuildServerOptions {
   };
   readonly authenticator?: SessionAuthenticator;
   readonly controlPlaneRepository?: ControlPlaneRepository;
+  readonly csvReconciliationService?: CsvReconciliationService;
   readonly dataConnectionRepository?: DataConnectionRepository;
   readonly evidenceStore?: DurableEvidenceStore;
+  readonly fireblocksService?: FireblocksService;
   readonly ingestionService?: IngestionService;
   readonly integrationRepository?: IntegrationRepository;
   readonly reconciliationService?: ReconciliationQueryService;
@@ -382,6 +389,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     options.integrationRepository ?? unavailableIntegrationRepository;
   const dataConnectionRepository = options.dataConnectionRepository;
   const evidenceStore = options.evidenceStore;
+  const fireblocksService =
+    options.fireblocksService ??
+    new FireblocksService({ dataConnectionRepository, integrationRepository });
+  const csvReconciliationService =
+    options.csvReconciliationService ?? new CsvReconciliationService();
   const ingestionService = options.ingestionService ?? unavailableIngestionService;
   const reconciliationService = options.reconciliationService ?? unavailableReconciliationQueryService;
   const reconciliationRunner = options.reconciliationRunner ?? unavailableReconciliationRunner;
@@ -637,8 +649,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (targetTenantId === undefined) return sendError(reply, 403, "PERMISSION_DENIED", "Cross-tenant administration requires platform access.");
     if (controlPlaneRepository === undefined) return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "Control-plane persistence is not configured.");
     try {
+      const passwordHash = input.data.temporaryPassword
+        ? await hashPassword(input.data.temporaryPassword)
+        : undefined;
       return reply.status(201).send(customerSchema.parse(
-        await controlPlaneRepository.createCustomer(controlPlaneAccess(session), input.data, targetTenantId),
+        await controlPlaneRepository.createCustomer(controlPlaneAccess(session), input.data, targetTenantId, passwordHash),
       ));
     } catch (error) {
       return sendControlPlaneError(request, reply, error);
@@ -764,9 +779,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (dataConnectionRepository === undefined) {
       return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "Data-connection persistence is not configured.");
     }
+    const customerId = session.actor.customerId ?? (request.query as { customerId?: string } | undefined)?.customerId;
     try {
       return dataConnectionListSchema.parse({
-        data: await dataConnectionRepository.list(session.tenant.tenantId),
+        data: await dataConnectionRepository.list(session.tenant.tenantId, customerId),
         schemaVersion: "1",
       });
     } catch (error) {
@@ -780,6 +796,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (session === undefined || !requirePermission(session, "integrations:write", reply)) return reply;
     const input = configureDataConnectionRequestSchema.safeParse(request.body);
     if (!input.success) return sendError(reply, 400, "INVALID_REQUEST", "The connection configuration is invalid.");
+    if (session.actor.customerId) {
+      input.data.customerId = session.actor.customerId;
+    }
     if (dataConnectionRepository === undefined) {
       return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "Data-connection persistence is not configured.");
     }
@@ -793,15 +812,49 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
+  server.get("/v1/data-connections/fireblocks/wallets", async (request, reply) => {
+    const session = await resolveSession(request, reply, authenticator);
+    if (session === undefined || !requirePermission(session, "integrations:read", reply)) return reply;
+    const customerId = session.actor.customerId ?? (request.query as { customerId?: string } | undefined)?.customerId;
+    try {
+      const wallets = await fireblocksService.listVaultWallets(session.tenant.tenantId, customerId);
+      return fireblocksWalletListSchema.parse({
+        data: wallets,
+        schemaVersion: "1",
+      });
+    } catch (error) {
+      request.log.error({ errorName: error instanceof Error ? error.name : "UnknownError" }, "Fireblocks wallets could not be listed");
+      return sendError(reply, 500, "FIREBLOCKS_WALLETS_FAILED", "Failed to retrieve Fireblocks vault wallets.");
+    }
+  });
+
+  server.post("/v1/data-connections/fireblocks/reconcile", async (request, reply) => {
+    const session = await resolveSession(request, reply, authenticator);
+    if (session === undefined || !requirePermission(session, "reconciliation:write", reply)) return reply;
+    const input = reconcileFireblocksWalletRequestSchema.safeParse(request.body);
+    if (!input.success) return sendError(reply, 400, "INVALID_REQUEST", "The Fireblocks reconciliation request is invalid.");
+    if (session.actor.customerId) {
+      input.data.customerId = session.actor.customerId;
+    }
+    try {
+      const result = await fireblocksService.reconcileWallet(session.tenant.tenantId, input.data, reconciliationRunner);
+      return reply.status(201).send(positionReconciliationSchema.parse(result));
+    } catch (error) {
+      request.log.error({ errorName: error instanceof Error ? error.name : "UnknownError" }, "Fireblocks reconciliation failed");
+      return sendError(reply, 500, "FIREBLOCKS_RECONCILIATION_FAILED", "Failed to reconcile Fireblocks wallet balance.");
+    }
+  });
+
   server.get("/v1/csv-imports", async (request, reply) => {
     const session = await resolveSession(request, reply, authenticator);
     if (session === undefined || !requirePermission(session, "integrations:read", reply)) return reply;
     if (dataConnectionRepository === undefined) {
       return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "CSV import persistence is not configured.");
     }
+    const customerId = session.actor.customerId ?? (request.query as { customerId?: string } | undefined)?.customerId;
     try {
       return csvImportListSchema.parse({
-        data: await dataConnectionRepository.listCsvImports(session.tenant.tenantId),
+        data: await dataConnectionRepository.listCsvImports(session.tenant.tenantId, customerId),
         schemaVersion: "1",
       });
     } catch (error) {
@@ -839,9 +892,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           rawBytes,
           tenantId: session.tenant.tenantId,
         });
+        const customerId = session.actor.customerId ?? input.data.customerId;
         return reply.status(201).send(csvImportSchema.parse(
           await dataConnectionRepository.recordCsvImport({
             byteLength: stored.byteLength,
+            ...(customerId ? { customerId } : {}),
             fileName: input.data.fileName,
             importId,
             objectUri: stored.objectUri,
@@ -857,6 +912,42 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     },
   );
 
+  server.post<{ Params: { importId: string } }>(
+    "/v1/csv-imports/:importId/reconcile",
+    async (request, reply) => {
+      const session = await resolveSession(request, reply, authenticator);
+      if (session === undefined || !requirePermission(session, "reconciliation:write", reply)) return reply;
+      const importIdResult = uuidSchema.safeParse(request.params.importId);
+      if (!importIdResult.success) return sendError(reply, 400, "INVALID_REQUEST", "The CSV import ID is invalid.");
+      if (dataConnectionRepository === undefined || evidenceStore === undefined) {
+        return sendError(reply, 503, "PERSISTENCE_UNAVAILABLE", "CSV reconciliation storage is not configured.");
+      }
+      const bodyResult = reconcileCsvRequestSchema.safeParse(request.body ?? {});
+      const body = bodyResult.success ? bodyResult.data : undefined;
+      const customerId = session.actor.customerId ?? body?.customerId;
+
+      try {
+        const results = await csvReconciliationService.reconcileCsv({
+          customerId,
+          dataConnectionRepository,
+          evidenceStore,
+          importId: importIdResult.data,
+          integrationRepository,
+          policyVersion: body?.policyVersion,
+          reconciliationRunner,
+          tenantId: session.tenant.tenantId,
+        });
+        return reply.status(201).send(positionReconciliationListSchema.parse({
+          data: results,
+          schemaVersion: "1",
+        }));
+      } catch (error) {
+        request.log.error({ errorName: error instanceof Error ? error.name : "UnknownError" }, "CSV reconciliation failed");
+        return sendError(reply, 500, "CSV_RECONCILIATION_FAILED", "Failed to reconcile CSV import.");
+      }
+    },
+  );
+
   server.get("/v1/integrations", async (request, reply) => {
     const session = await resolveSession(request, reply, authenticator);
     if (
@@ -866,9 +957,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return reply;
     }
 
+    const customerId = session.actor.customerId ?? (request.query as { customerId?: string } | undefined)?.customerId;
     try {
       const integrations = await integrationRepository.listForTenant(
         session.tenant.tenantId,
+        customerId,
       );
       return integrationListSchema.parse({
         data: integrations,
@@ -896,6 +989,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         "INVALID_REQUEST",
         "The integration configuration is invalid.",
       );
+    }
+
+    if (session.actor.customerId) {
+      configuration.data.customerId = session.actor.customerId;
     }
 
     try {
@@ -1056,8 +1153,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   server.get("/v1/reconciliations", async (request, reply) => {
     const session = await resolveSession(request, reply, authenticator);
     if (session === undefined || !requirePermission(session, "reconciliation:read", reply)) return reply;
+    const customerId = session.actor.customerId ?? (request.query as { customerId?: string } | undefined)?.customerId;
     try {
-      const results = await reconciliationService.listResults(session.tenant.tenantId);
+      const results = await reconciliationService.listResults(session.tenant.tenantId, customerId);
       return positionReconciliationListSchema.parse({ data: results, schemaVersion: "1" });
     } catch (error) {
       return sendControlError(request, reply, error);
@@ -1069,6 +1167,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (session === undefined || !requirePermission(session, "reconciliation:write", reply)) return reply;
     const input = createPositionReconciliationRequestSchema.safeParse(request.body);
     if (!input.success) return sendError(reply, 400, "INVALID_REQUEST", "The reconciliation request is invalid.");
+    if (session.actor.customerId) {
+      input.data.customerId = session.actor.customerId;
+    }
     try {
       const result = await reconciliationRunner.run({
         request: input.data,

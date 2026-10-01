@@ -32,8 +32,12 @@ export default async function CustomersPage({
               <input id="customer-name" name="displayName" placeholder="Northstar Trading" required />
               <label htmlFor="customer-reference">Customer reference</label>
               <input id="customer-reference" name="externalReference" placeholder="CUS-001" required />
-              <p className="form-help">Use a stable reference from the company&apos;s CRM or contract system.</p>
-              <PendingSubmitButton className="primary-button" pendingLabel="Creating customer">Create customer</PendingSubmitButton>
+              <label htmlFor="customer-email">Customer login email</label>
+              <input id="customer-email" name="email" type="email" placeholder="finance@customer.com" required />
+              <label htmlFor="customer-password">Customer temporary password (min 12 chars)</label>
+              <input id="customer-password" name="temporaryPassword" type="password" minLength={12} placeholder="At least 12 characters" required />
+              <p className="form-help">Creates login credentials so the customer can access their workspace dashboard, connect Fireblocks &amp; QuickBooks, and view live reconciliations.</p>
+              <PendingSubmitButton className="primary-button" pendingLabel="Creating customer & credentials">Create customer &amp; login</PendingSubmitButton>
             </form>
           ) : <div className="inline-alert"><strong>Read-only access</strong>Your role cannot create customer workspaces.</div>}
         </aside>
@@ -43,9 +47,9 @@ export default async function CustomersPage({
           {snapshot === null ? <div className="inline-alert"><strong>Customer service unavailable</strong>Try again after the API recovers.</div> : snapshot.customers.length === 0 ? (
             <div className="empty-state"><Storefront size={26} /><strong>No customers yet</strong><span>Onboard the first end-customer workspace.</span></div>
           ) : (
-            <div className="table-scroll"><table className="control-table"><thead><tr><th>Customer</th>{isPlatform ? <th>Company</th> : null}<th>Reference</th><th>Billing</th><th>Status</th></tr></thead><tbody>{snapshot.customers.map((customer) => {
+            <div className="table-scroll"><table className="control-table"><thead><tr><th>Customer & Login</th>{isPlatform ? <th>Company</th> : null}<th>Reference</th><th>Billing</th><th>Status</th></tr></thead><tbody>{snapshot.customers.map((customer) => {
               const subscription = snapshot.subscriptions.find((item) => item.customerId === customer.customerId && item.status !== "cancelled");
-              return <tr key={customer.customerId}><td><strong>{customer.displayName}</strong><span className="table-subline">Created {new Date(customer.createdAt).toLocaleDateString()}</span></td>{isPlatform ? <td>{tenantName.get(customer.tenantId)}</td> : null}<td className="mono-value">{customer.externalReference}</td><td>{subscription ? <><strong>{subscription.planName}</strong><span className="table-subline">{subscription.interval}</span></> : <span className="muted-copy">Not configured</span>}</td><td><span className={`status-pill status-${customer.status}`}>{customer.status}</span></td></tr>;
+              return <tr key={customer.customerId}><td><strong>{customer.displayName}</strong><span className="table-subline">{customer.email ? `Login: ${customer.email}` : "Created " + new Date(customer.createdAt).toLocaleDateString()}</span></td>{isPlatform ? <td>{tenantName.get(customer.tenantId)}</td> : null}<td className="mono-value">{customer.externalReference}</td><td>{subscription ? <><strong>{subscription.planName}</strong><span className="table-subline">{subscription.interval}</span></> : <span className="muted-copy">Not configured</span>}</td><td><span className={`status-pill status-${customer.status}`}>{customer.status}</span></td></tr>;
             })}</tbody></table></div>
           )}
         </section>

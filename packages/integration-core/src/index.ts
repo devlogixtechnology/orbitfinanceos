@@ -29,7 +29,7 @@ export interface CreateIntegrationResult {
 export interface IntegrationRepository {
   create(command: CreateIntegrationCommand): Promise<CreateIntegrationResult>;
   getForTenant(tenantId: string, integrationId: string): Promise<Integration | null>;
-  listForTenant(tenantId: string): Promise<readonly Integration[]>;
+  listForTenant(tenantId: string, customerId?: string): Promise<readonly Integration[]>;
   update(command: UpdateIntegrationCommand): Promise<Integration | null>;
 }
 
@@ -94,6 +94,7 @@ export class InMemoryIntegrationRepository implements IntegrationRepository {
     const createdAt = this.clock().toISOString();
     const integration = integrationSchema.parse({
       createdAt,
+      ...(configuration.customerId ? { customerId: configuration.customerId } : {}),
       enabled: true,
       finalityPolicyVersion: configuration.finalityPolicyVersion,
       integrationId,
@@ -130,11 +131,15 @@ export class InMemoryIntegrationRepository implements IntegrationRepository {
     return Promise.resolve({ auditEvent, integration });
   }
 
-  listForTenant(tenantId: string): Promise<readonly Integration[]> {
+  listForTenant(tenantId: string, customerId?: string): Promise<readonly Integration[]> {
     return Promise.resolve(
       [...this.records.values()]
         .map((record) => record.integration)
-        .filter((integration) => integration.tenantId === tenantId),
+        .filter(
+          (integration) =>
+            integration.tenantId === tenantId &&
+            (customerId === undefined || integration.customerId === customerId),
+        ),
     );
   }
 

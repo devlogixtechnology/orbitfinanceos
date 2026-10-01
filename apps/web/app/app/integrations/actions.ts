@@ -25,8 +25,13 @@ const providerGroups = {
   ],
 } as const;
 
+function optionalString(value: FormDataEntryValue | null): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
 export async function configureDataConnection(formData: FormData): Promise<never> {
   const provider = formData.get("provider");
+  const customerId = optionalString(formData.get("customerId"));
   const publicConfiguration = provider === "quickbooks"
     ? {
         companyId: formData.get("companyId"),
@@ -37,6 +42,7 @@ export async function configureDataConnection(formData: FormData): Promise<never
         workspaceId: formData.get("workspaceId"),
       };
   const input = configureDataConnectionRequestSchema.safeParse({
+    ...(customerId ? { customerId } : {}),
     displayName: formData.get("displayName"),
     provider,
     publicConfiguration,
@@ -59,8 +65,11 @@ export async function uploadCsvImport(formData: FormData): Promise<never> {
   if (!(candidate instanceof File) || candidate.size === 0 || candidate.size > 1_048_576) {
     redirect("/app/integrations?error=csv-invalid");
   }
+  const customerId = optionalString(formData.get("customerId"));
+  const shouldReconcile = formData.get("startReconciliation") === "true";
   const input = csvImportRequestSchema.safeParse({
     contentBase64: Buffer.from(await candidate.arrayBuffer()).toString("base64"),
+    ...(customerId ? { customerId } : {}),
     fileName: candidate.name,
     schemaVersion: "1",
   });
@@ -71,14 +80,50 @@ export async function uploadCsvImport(formData: FormData): Promise<never> {
     method: "POST",
   });
   if (response === null || !response.ok) redirect("/app/integrations?error=csv-unavailable");
+  
+  if (shouldReconcile) {
+    try {
+      const importedData = (await response.json()) as { importId: string };
+      if (importedData?.importId) {
+        await fetchAuthorizedApi(`/v1/csv-imports/${importedData.importId}/reconcile`, {
+          body: JSON.stringify({ ...(customerId ? { customerId } : {}) }),
+          headers: { "content-type": "application/json" },
+          method: "POST",
+        });
+        revalidatePath("/app/reconciliation");
+        revalidatePath("/app/integrations");
+        redirect("/app/reconciliation?reconciled=1");
+      }
+    } catch {
+      // If reading json fails, fall through
+    }
+  }
+
   revalidatePath("/app/integrations");
   redirect("/app/integrations?imported=1");
+}
+
+export async function reconcileCsvImport(formData: FormData): Promise<never> {
+  const importId = uuidSchema.safeParse(formData.get("importId"));
+  const customerId = optionalString(formData.get("customerId"));
+  if (!importId.success) redirect("/app/integrations?error=csv-invalid");
+  const response = await fetchAuthorizedApi(`/v1/csv-imports/${importId.data}/reconcile`, {
+    body: JSON.stringify({ ...(customerId ? { customerId } : {}) }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (response === null || !response.ok) redirect("/app/integrations?error=reconciliation-failed");
+  revalidatePath("/app/reconciliation");
+  revalidatePath("/app/integrations");
+  redirect("/app/reconciliation?reconciled=1");
 }
 
 export async function createIntegration(formData: FormData): Promise<never> {
   const rawChainId = formData.get("chainId");
   const chainId = rawChainId === "56" || rawChainId === "97" ? rawChainId : "";
+  const customerId = optionalString(formData.get("customerId"));
   const configuration = createIntegrationRequestSchema.safeParse({
+    ...(customerId ? { customerId } : {}),
     finalityPolicyVersion: "bsc-confirmations-v1",
     network: { chainId, family: "evm" },
     provider: "bsc-json-rpc",

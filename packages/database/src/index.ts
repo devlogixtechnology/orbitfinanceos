@@ -96,6 +96,7 @@ export async function withTenantTransaction<T>(
 interface IntegrationRow {
   readonly chain_id: "56" | "97";
   readonly created_at: Date;
+  readonly customer_id?: string | null;
   readonly enabled: boolean;
   readonly finality_policy_version: string;
   readonly id: string;
@@ -116,6 +117,7 @@ interface IntegrationRow {
 function toIntegration(row: IntegrationRow): Integration {
   return integrationSchema.parse({
     createdAt: row.created_at.toISOString(),
+    ...(typeof row.customer_id === "string" ? { customerId: row.customer_id } : {}),
     enabled: row.enabled,
     finalityPolicyVersion: row.finality_policy_version,
     integrationId: row.id,
@@ -172,6 +174,7 @@ export class PostgresIntegrationRepository implements IntegrationRepository {
           insert into orbit.integrations (
             tenant_id,
             id,
+            customer_id,
             provider,
             network_family,
             chain_id,
@@ -185,6 +188,7 @@ export class PostgresIntegrationRepository implements IntegrationRepository {
           ) values (
             ${command.tenantId}::uuid,
             ${integrationId}::uuid,
+            ${configuration.customerId ?? null}::uuid,
             ${configuration.provider},
             ${configuration.network.family},
             ${configuration.network.chainId},
@@ -252,25 +256,46 @@ export class PostgresIntegrationRepository implements IntegrationRepository {
     );
   }
 
-  async listForTenant(tenantId: string): Promise<readonly Integration[]> {
+  async listForTenant(tenantId: string, customerId?: string): Promise<readonly Integration[]> {
     return withTenantTransaction(this.database, tenantId, async (transaction) => {
-      const result = await sql<IntegrationRow>`
-        select
-          tenant_id,
-          id,
-          provider,
-          network_family,
-          chain_id,
-          starting_block,
-          finality_policy_version,
-          provider_groups,
-          wallet_addresses,
-          token_contracts,
-          enabled,
-          created_at
-        from orbit.integrations
-        order by created_at asc, id asc
-      `.execute(transaction);
+      const result = customerId === undefined
+        ? await sql<IntegrationRow>`
+            select
+              tenant_id,
+              id,
+              customer_id,
+              provider,
+              network_family,
+              chain_id,
+              starting_block,
+              finality_policy_version,
+              provider_groups,
+              wallet_addresses,
+              token_contracts,
+              enabled,
+              created_at
+            from orbit.integrations
+            order by created_at asc, id asc
+          `.execute(transaction)
+        : await sql<IntegrationRow>`
+            select
+              tenant_id,
+              id,
+              customer_id,
+              provider,
+              network_family,
+              chain_id,
+              starting_block,
+              finality_policy_version,
+              provider_groups,
+              wallet_addresses,
+              token_contracts,
+              enabled,
+              created_at
+            from orbit.integrations
+            where customer_id = ${customerId}::uuid
+            order by created_at asc, id asc
+          `.execute(transaction);
 
       return result.rows.map(toIntegration);
     });
@@ -285,6 +310,7 @@ export class PostgresIntegrationRepository implements IntegrationRepository {
         select
           tenant_id,
           id,
+          customer_id,
           provider,
           network_family,
           chain_id,
@@ -357,6 +383,7 @@ export class PostgresIntegrationRepository implements IntegrationRepository {
 
 interface CredentialRow {
   readonly actor_id: string;
+  readonly customer_id?: string | null;
   readonly email: string;
   readonly explicit_permissions: readonly string[];
   readonly external_subject: string;
@@ -371,6 +398,7 @@ interface CredentialRow {
 function toStoredCredential(row: CredentialRow): StoredCredential {
   return {
     actorId: row.actor_id,
+    ...(typeof row.customer_id === "string" ? { customerId: row.customer_id } : {}),
     email: row.email,
     explicitPermissions: row.explicit_permissions,
     failedAuthenticationCount: row.failed_authentication_count,
@@ -438,12 +466,14 @@ export class PostgresCustomAuthRepository implements CustomAuthRepository {
       credential.tenant_id,
       async (transaction) => {
         const identity = await sql<{
+          customer_id: string | null;
           external_subject: string;
           explicit_permissions: readonly string[];
           roles: readonly string[];
           tenant_display_name: string;
         }>`
           select
+            actors.customer_id,
             actors.external_subject,
             tenants.display_name as tenant_display_name,
             array(
@@ -1181,6 +1211,7 @@ export class PostgresVerificationPolicyStore implements VerificationPolicyStore 
 interface ReconciliationResultRow {
   readonly asset_id: string;
   readonly completed_at: Date;
+  readonly customer_id?: string | null;
   readonly cutoff: Date;
   readonly difference_atomic: string | null;
   readonly excluded_movement_ids: readonly string[];
@@ -1202,6 +1233,7 @@ function toPositionReconciliation(row: ReconciliationResultRow, exceptionCount: 
   return positionReconciliationSchema.parse({
     assetId: row.asset_id,
     completedAt: row.completed_at.toISOString(),
+    ...(typeof row.customer_id === "string" ? { customerId: row.customer_id } : {}),
     cutoff: row.cutoff.toISOString(),
     ...(row.difference_atomic === null ? {} : { differenceAtomic: row.difference_atomic }),
     exceptionCount,
@@ -1256,7 +1288,7 @@ function toOperationalException(row: OperationalExceptionRow): OperationalExcept
 }
 
 const reconciliationColumns = sql.raw(`
-  tenant_id, id, wallet_address, asset_id, cutoff, policy_version,
+  tenant_id, id, customer_id, wallet_address, asset_id, cutoff, policy_version,
   opening_quantity_atomic, incoming_quantity_atomic, outgoing_quantity_atomic,
   fee_quantity_atomic, expected_closing_quantity_atomic,
   observed_closing_quantity_atomic, difference_atomic, state,
@@ -1337,18 +1369,30 @@ export class PostgresReconciliationQueryService implements ReconciliationQuerySe
     });
   }
 
-  listResults(tenantId: string): Promise<readonly PositionReconciliation[]> {
+  listResults(tenantId: string, customerId?: string): Promise<readonly PositionReconciliation[]> {
     return withTenantTransaction(this.database, tenantId, async (transaction) => {
-      const result = await sql<ReconciliationResultRow & { exception_count: string }>`
-        select results.*, count(exceptions.id)::text as exception_count
-        from orbit.reconciliation_results as results
-        left join orbit.operational_exceptions as exceptions
-          on exceptions.tenant_id = results.tenant_id
-          and exceptions.affected_resource_type = 'reconciliation'
-          and exceptions.affected_resource_id = results.id
-        group by results.tenant_id, results.id
-        order by results.cutoff desc, results.id
-      `.execute(transaction);
+      const result = customerId === undefined
+        ? await sql<ReconciliationResultRow & { exception_count: string }>`
+            select results.*, count(exceptions.id)::text as exception_count
+            from orbit.reconciliation_results as results
+            left join orbit.operational_exceptions as exceptions
+              on exceptions.tenant_id = results.tenant_id
+              and exceptions.affected_resource_type = 'reconciliation'
+              and exceptions.affected_resource_id = results.id
+            group by results.tenant_id, results.id
+            order by results.cutoff desc, results.id
+          `.execute(transaction)
+        : await sql<ReconciliationResultRow & { exception_count: string }>`
+            select results.*, count(exceptions.id)::text as exception_count
+            from orbit.reconciliation_results as results
+            left join orbit.operational_exceptions as exceptions
+              on exceptions.tenant_id = results.tenant_id
+              and exceptions.affected_resource_type = 'reconciliation'
+              and exceptions.affected_resource_id = results.id
+            where results.customer_id = ${customerId}::uuid
+            group by results.tenant_id, results.id
+            order by results.cutoff desc, results.id
+          `.execute(transaction);
       return result.rows.map((row) => toPositionReconciliation(row, row.exception_count));
     });
   }
@@ -1421,13 +1465,14 @@ export class PostgresReconciliationQueryService implements ReconciliationQuerySe
     return withTenantTransaction(this.database, result.tenantId, async (transaction) => {
       await sql`
         insert into orbit.reconciliation_results (
-          tenant_id, id, wallet_address, asset_id, cutoff, policy_version,
+          tenant_id, id, customer_id, wallet_address, asset_id, cutoff, policy_version,
           opening_quantity_atomic, incoming_quantity_atomic, outgoing_quantity_atomic,
           fee_quantity_atomic, expected_closing_quantity_atomic,
           observed_closing_quantity_atomic, difference_atomic, state,
           verified_movement_ids, excluded_movement_ids, completed_at
         ) values (
           ${result.tenantId}::uuid, ${result.reconciliationId}::uuid,
+          ${result.customerId ?? null}::uuid,
           ${result.walletAddress.toLowerCase()}, ${result.assetId}, ${result.cutoff}::timestamptz,
           ${result.policyVersion}, ${result.openingQuantityAtomic},
           ${result.incomingQuantityAtomic}, ${result.outgoingQuantityAtomic},

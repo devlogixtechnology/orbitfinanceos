@@ -108,6 +108,7 @@ export function digestSessionToken(token: string): string {
 
 export interface StoredCredential {
   readonly actorId: string;
+  readonly customerId?: string | null;
   readonly email: string;
   readonly failedAuthenticationCount: number;
   readonly lockedUntil: Date | null;
@@ -320,8 +321,9 @@ export function permissionsForRoles(
         ...operationalReadPermissions,
         ...operationalWritePermissions,
       ]) permissions.add(permission);
-    } else if (role === "user" || role === "read_only_operator") {
+    } else if (role === "user" || role === "read_only_operator" || role === "customer" || role === "customer_admin") {
       for (const permission of operationalReadPermissions) permissions.add(permission);
+      for (const permission of operationalWritePermissions) permissions.add(permission);
     }
   }
   return [...permissions].sort();
@@ -373,6 +375,7 @@ export class InMemoryCustomAuthRepository implements CustomAuthRepository {
       sessionContextSchema.parse({
         actor: {
           actorId: credential.actorId,
+          ...(credential.customerId ? { customerId: credential.customerId } : {}),
           subject: credential.subject,
         },
         authenticatedAt: session.createdAt.toISOString(),
